@@ -1,0 +1,95 @@
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: db
+spec:
+  backup:
+    schedule: "0 2 * * *"
+  check:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "0 4 * * 0"
+    retention:
+      keepLast: 7
+      keepDaily: 7
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: mb
+spec:
+  backup:
+    schedule: "0 2 * * *"
+  check:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "0 4 * * 0"
+    retention:
+      keepLast: 7
+      keepDaily: 7
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: llm
+spec:
+  backup:
+    schedule: "0 2 * * *"
+  check:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "0 4 * * 0"
+    retention:
+      keepLast: 7
+      keepDaily: 7
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: vcs
+spec:
+  backup:
+    schedule: "0 2 * * *"
+  check:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "0 4 * * 0"
+    retention:
+      keepLast: 7
+      keepDaily: 7
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: secret
+spec:
+  backup:
+    schedule: "0 2 * * *"
+  check:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "0 4 * * 0"
+    retention:
+      keepLast: 7
+      keepDaily: 7
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: acl
+spec:
+  backup:
+    schedule: "0 2 * * *"
+  check:
+    schedule: "0 3 * * 0"
+  prune:
+    schedule: "0 4 * * 0"
+    retention:
+      keepLast: 7
+      keepDaily: 7

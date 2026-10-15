@@ -1,0 +1,9 @@
+---
+- name: Bootstrap minikube and tooling
+  hosts: local
+  become: true
+  become_exe: "{{ sudo_exe }}"
+  vars:
+    sudo_exe: "{{ lookup('pipe', 'command -v sudo.ws || command -v sudo') | trim }}"
+  roles:
+    - bootstrap

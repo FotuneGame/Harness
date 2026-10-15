@@ -1,0 +1,9 @@
+jaeger:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  ingress:
+    enabled: false

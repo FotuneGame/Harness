@@ -1,0 +1,17 @@
+---
+minikube_cpus: 6
+minikube_memory: 16384
+minikube_disk: 60g
+kubectl_version: "v1.31.0"
+terraform_version: "1.9.8"
+install_docker: true
+minikube_user: "{{ ansible_facts['user_id'] }}"
+base_packages:
+  - curl
+  - git
+  - unzip
+  - ca-certificates
+  - gnupg
+  - conntrack
+  - socat
+volumes_host_path: "{{ (playbook_dir ~ '/../volumes') | realpath }}"

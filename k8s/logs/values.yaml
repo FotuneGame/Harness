@@ -1,0 +1,68 @@
+fullnameOverride: logs
+
+crds:
+  enabled: true
+
+alertmanager:
+  enabled: false
+
+grafana:
+  enabled: true
+  fullnameOverride: logs-grafana
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: local
+    volumeName: pv-logs-grafana
+    lookupVolumeName: false
+    accessModes:
+      - ReadWriteOnce
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  ingress:
+    enabled: false
+
+prometheus:
+  ingress:
+    enabled: false
+  prometheusSpec:
+    retention: 15d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+    alertingEndpoints:
+      - namespace: alert
+        name: alertmanager
+        port: 9093
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local
+          volumeName: pv-logs-prometheus
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi

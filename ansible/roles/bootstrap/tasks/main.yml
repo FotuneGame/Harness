@@ -1,0 +1,72 @@
+---
+- name: Install base packages (Debian)
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install base packages (RedHat)
+  ansible.builtin.dnf:
+    name: "{{ base_packages }}"
+    state: present
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Check docker
+  ansible.builtin.command: docker --version
+  register: docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Install docker (Debian)
+  ansible.builtin.apt:
+    name: docker.io
+    state: present
+  when: install_docker and docker_check.rc != 0 and ansible_facts['os_family'] == "Debian"
+
+- name: Install docker (RedHat)
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+  when: install_docker and docker_check.rc != 0 and ansible_facts['os_family'] == "RedHat"
+
+- name: Ensure docker service is running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+  when: install_docker and docker_check.rc != 0
+
+- name: Install kubectl
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+
+- name: Install Helm
+  ansible.builtin.shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    creates: /usr/local/bin/helm
+
+- name: Install Terraform
+  ansible.builtin.unarchive:
+    src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+    dest: /usr/local/bin
+    remote_src: true
+    mode: "0755"
+    creates: /usr/local/bin/terraform
+
+- name: Install minikube
+  ansible.builtin.get_url:
+    url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    dest: /usr/local/bin/minikube
+    mode: "0755"
+
+- name: Start minikube with the volumes mount
+  ansible.builtin.command: >-
+    minikube start --driver=docker
+    --cpus={{ minikube_cpus }} --memory={{ minikube_memory }} --disk-size={{ minikube_disk }}
+    --mount-string="{{ volumes_host_path }}:/volumes"
+  become_user: "{{ minikube_user }}"
+  register: minikube_start
+  changed_when: "'Done!' in minikube_start.stdout"
