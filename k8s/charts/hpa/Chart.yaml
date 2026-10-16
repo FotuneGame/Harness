@@ -1,0 +1,5 @@
+apiVersion: v2
+name: hpa
+description: Horizontal pod autoscalers for user interfaces
+type: application
+version: 0.1.0

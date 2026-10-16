@@ -26,10 +26,10 @@ if ! kubectl get pod vault-0 -n secret >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Ожидание готовности pod vault-0..."
-if ! kubectl wait --for=condition=Ready pod/vault-0 \
+echo "Ожидание запуска pod vault-0..."
+if ! kubectl wait --for=jsonpath='{.status.phase}'=Running pod/vault-0 \
   -n secret --timeout=5m; then
-  echo "Pod vault-0 не стал готовым за 5 минут. Проверьте состояние командой:" >&2
+  echo "Pod vault-0 не запустился за 5 минут. Проверьте состояние командой:" >&2
   echo "  kubectl describe pod vault-0 -n secret" >&2
   exit 1
 fi

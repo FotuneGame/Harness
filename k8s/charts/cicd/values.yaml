@@ -1,0 +1,10 @@
+vault:
+  address: http://vault.secret.svc.cluster.local:8200
+
+secrets:
+  gitlabRunner:
+    path: cicd/gitlab-runner
+    name: gitlab-runner-secret
+  argocdRepository:
+    path: cicd/argocd-gitlab
+    name: argocd-gitlab-repository

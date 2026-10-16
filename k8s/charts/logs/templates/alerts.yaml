@@ -1,0 +1,69 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-health
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: logs
+spec:
+  groups:
+    - name: kubernetes-health
+      rules:
+        - alert: KubernetesNodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Kubernetes node is not ready"
+            description: "Node {{ "{{" }} $labels.node {{ "}}" }} has not been Ready for five minutes."
+        - alert: KubernetesPodCrashLooping
+          expr: max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod is crash looping"
+            description: "{{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.pod {{ "}}" }} is in CrashLoopBackOff."
+        - alert: PersistentVolumeUsageHigh
+          expr: kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Persistent volume is over 85% full"
+            description: "PVC {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} is nearing capacity."
+    - name: platform-services
+      rules:
+        - alert: PlatformExporterDown
+          expr: up{service=~".*(postgres-exporter|redis-exporter|clickhouse|kafka-exporter).*"} == 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "A database or broker metrics endpoint is unavailable"
+            description: "Prometheus cannot scrape {{ "{{" }} $labels.service {{ "}}" }}."
+        - alert: KafkaConsumerLagHigh
+          expr: max by (consumergroup) (kafka_consumergroup_lag) > 1000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kafka consumer lag is high"
+            description: "Consumer group {{ "{{" }} $labels.consumergroup {{ "}}" }} has lag above 1000."
+        - alert: PostgreSQLConnectionsHigh
+          expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PostgreSQL connection usage is high"
+            description: "PostgreSQL is using more than 80% of configured connections."
+        - alert: RedisMemoryUsageHigh
+          expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis memory usage is high"
+            description: "Redis is using more than 85% of its configured memory limit."

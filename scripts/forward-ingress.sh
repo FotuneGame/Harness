@@ -35,6 +35,7 @@ hostnames=(
   prometheus.local
   alert.local
   jaeger.local
+  argocd.local
 )
 
 if grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then

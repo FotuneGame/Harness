@@ -1,0 +1,9 @@
+namespaces:
+  db: db
+  mb: mb
+  llm: llm
+  secret: secret
+  acl: acl
+  vcs: vcs
+  logs: logs
+  cicd: cicd

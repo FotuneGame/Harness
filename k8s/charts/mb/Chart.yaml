@@ -1,0 +1,5 @@
+apiVersion: v2
+name: mb
+description: Kafka and Kafka UI resources
+type: application
+version: 0.1.0

@@ -1,0 +1,18 @@
+{{- range .Values.schedule.namespaces }}
+---
+apiVersion: k8up.io/v1
+kind: Schedule
+metadata:
+  name: backup
+  namespace: {{ . | quote }}
+spec:
+  backup:
+    schedule: {{ $.Values.schedule.backup | quote }}
+  check:
+    schedule: {{ $.Values.schedule.check | quote }}
+  prune:
+    schedule: {{ $.Values.schedule.prune | quote }}
+    retention:
+      keepLast: {{ $.Values.schedule.keepLast }}
+      keepDaily: {{ $.Values.schedule.keepDaily }}
+{{- end }}

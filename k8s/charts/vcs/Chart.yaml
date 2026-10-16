@@ -1,0 +1,5 @@
+apiVersion: v2
+name: vcs
+description: GitLab Container Registry resources and GitLab values
+type: application
+version: 0.1.0

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: local-infrastructure
+description: Namespaces and persistent volumes for the local infrastructure cluster
+type: application
+version: 0.1.0

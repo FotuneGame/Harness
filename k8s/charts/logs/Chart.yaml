@@ -1,0 +1,5 @@
+apiVersion: v2
+name: logs
+description: Monitoring rules, dashboards and exporter resources
+type: application
+version: 0.1.0

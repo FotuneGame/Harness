@@ -54,6 +54,79 @@
     enabled: true
   when: install_docker and 'docker.service' in ansible_facts.services
 
+- name: Проверка NVIDIA GPU на Linux-хосте
+  ansible.builtin.command: nvidia-smi
+  register: nvidia_smi_check
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+
+- name: Добавление ключа репозитория NVIDIA Container Toolkit
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey |
+      gpg --dearmor --yes -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  args:
+    executable: /bin/bash
+    creates: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+    - nvidia_smi_check.rc | default(1) == 0
+
+- name: Добавление репозитория NVIDIA Container Toolkit
+  ansible.builtin.get_url:
+    url: https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list
+    dest: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    mode: "0644"
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+    - nvidia_smi_check.rc | default(1) == 0
+
+- name: Привязка репозитория NVIDIA к ключу подписи
+  ansible.builtin.replace:
+    path: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    regexp: "^deb https://"
+    replace: "deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://"
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+    - nvidia_smi_check.rc | default(1) == 0
+
+- name: Установка NVIDIA Container Toolkit
+  ansible.builtin.apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: true
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+    - nvidia_smi_check.rc | default(1) == 0
+
+- name: Проверка runtime NVIDIA в Docker
+  ansible.builtin.command: docker info --format "{{ '{{' }}json .Runtimes{{ '}}' }}"
+  register: docker_runtimes
+  changed_when: false
+  failed_when: false
+  when:
+    - install_docker
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+    - nvidia_smi_check.rc | default(1) == 0
+
+- name: Настройка runtime NVIDIA в Docker
+  ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
+  when:
+    - install_docker
+    - ansible_facts['os_family'] == "Debian"
+    - "'microsoft' not in ansible_facts['kernel'] | lower"
+    - nvidia_smi_check.rc | default(1) == 0
+    - "'nvidia' not in (docker_runtimes.stdout | default(''))"
+  notify: Перезапуск службы Docker
+
 - name: Проверка наличия Minikube
   ansible.builtin.command: minikube version
   register: minikube_check
@@ -73,9 +146,15 @@
   changed_when: false
   failed_when: false
 
+- name: Получение актуальной версии kubectl
+  ansible.builtin.command: curl -fsSL https://dl.k8s.io/release/stable.txt
+  register: kubectl_stable_version
+  changed_when: false
+  when: kubectl_check.rc != 0
+
 - name: Установка kubectl, если он отсутствует
   ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    url: "https://dl.k8s.io/release/{{ kubectl_stable_version.stdout }}/bin/linux/amd64/kubectl"
     dest: /usr/local/bin/kubectl
     mode: "0755"
   when: kubectl_check.rc != 0

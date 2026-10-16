@@ -1,0 +1,4 @@
+gpu:
+  enabled: false
+env:
+  OLLAMA_BASE_URL: http://ollama.llm.svc.cluster.local:11434

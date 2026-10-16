@@ -6,7 +6,6 @@
     terraform_version: "1.10.5"
     vault_version: "1.18.5"
     minikube_version: "v1.34.0"
-    kubectl_version: "v1.31.0"
     install_docker: true
     docker_user: "{{ lookup('env', 'SUDO_USER') | default(lookup('env', 'USER'), true) }}"
     base_packages:
