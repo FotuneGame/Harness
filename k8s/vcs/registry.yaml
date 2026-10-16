@@ -35,21 +35,10 @@ spec:
           ports:
             - name: http
               containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: registry-config
           env:
-            - name: REGISTRY_HTTP_ADDR
-              value: ":5000"
-            - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
-              value: /var/lib/registry
-            - name: REGISTRY_STORAGE_DELETE_ENABLED
-              value: "true"
-            - name: REGISTRY_AUTH_TOKEN_REALM
-              value: http://${gitlab_host}/jwt/auth
-            - name: REGISTRY_AUTH_TOKEN_SERVICE
-              value: container_registry
-            - name: REGISTRY_AUTH_TOKEN_ISSUER
-              value: gitlab-issuer
-            - name: REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE
-              value: /etc/docker/registry/certificate.crt
             - name: REGISTRY_HTTP_SECRET
               valueFrom:
                 secretKeyRef:

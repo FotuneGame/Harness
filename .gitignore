@@ -1,0 +1,10 @@
+terraform/.terraform/
+*.tfstate
+*.tfstate.*
+terraform/*.tfplan
+terraform/terraform.tfvars
+terraform/backend.hcl
+terraform/crash.log
+terraform/crash.*.log
+**/__pycache__/
+*.py[cod]

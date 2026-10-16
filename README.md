@@ -1,514 +1,189 @@
-# Локальная инфраструктура в Kubernetes (minikube)
+# Локальная инфраструктура
 
-Набор конфигов, который разворачивает на локальном **minikube** полный dev-стек:
-VCS с Container Registry, CI, базы данных, брокер, LLM, секреты, IAM и
-наблюдаемость (метрики, алерты, трейсинг) — каждый компонент в своём
-namespace, официальные образы, данные на диске хоста.
+Двухузловой Minikube-кластер. 
 
-Оркестрация — **Terraform** (провайдеры `helm` / `kubernetes` / `kubectl`),
-пакетирование — **Helm** (официальные чарты), bootstrap окружения — **Ansible**.
+Первый узел является ифраструктурный для официальных образов баз данных, систем контроля версий, брокеров сообщений, непрерывной интеграции, проксирования, large language models, списока управления доступом, хранилищем секретов, логированием/мониторингом, резервным копированием.
 
----
+Второй узел зарезервирован под собственные приложения.
 
-## Компоненты
+## Технические характеристики сервера
 
-| # | Компонент | Namespace | Каталог | Образ / чарт | Веб-интерфейс |
-|---|-----------|-----------|---------|--------------|---------------|
-| 1 | GitLab CE | `vcs` | `k8s/vcs` | chart `gitlab/gitlab` | да |
-| 2 | Container Registry | `vcs` | `k8s/vcs` | `registry:2` + PVC | да |
-| 3 | GitLab Runner | `ci` | `k8s/ci` | chart `gitlab/gitlab-runner` | — |
-| 4 | PostgreSQL | `db` | `k8s/db/pg` | `postgres:latest` + `dpage/pgadmin4` | pgAdmin |
-| 5 | Redis | `db` | `k8s/db/redis` | `redis:latest` + `redis/redisinsight` | RedisInsight |
-| 6 | ClickHouse | `db` | `k8s/db/ch` | `clickhouse/clickhouse-server` | Play UI `/play` |
-| 7 | Kafka | `mb` | `k8s/mb` | `apache/kafka` + `provectuslabs/kafka-ui` | Kafka UI |
-| 8 | Ingress (nginx) | `ingress` | `k8s/proxy` | chart `ingress-nginx/ingress-nginx` | — |
-| 9 | Ollama | `llm` | `k8s/llm/ollama` | `ollama/ollama` + `open-webui` | Open WebUI |
-| 10 | Vault | `secret` | `k8s/secret` | chart `hashicorp/vault` | да, `/ui` |
-| 11 | Keycloak | `acl` | `k8s/acl` | `quay.io/keycloak/keycloak` | Admin Console |
-| 12 | Prometheus + Grafana | `logs` | `k8s/logs` | chart `prometheus-community/kube-prometheus-stack` | Grafana, Prometheus |
-| 13 | Alertmanager | `alert` | `k8s/alert` | chart `prometheus-community/alertmanager` | да |
-| 14 | Jaeger | `tracing` | `k8s/tracing` | chart `jaegertracing/jaeger` | Jaeger UI |
-| 15 | K8up + MinIO | `backup` | `k8s/backup` | chart `k8up/k8up` + `minio/minio` | — |
+| Ресурс | Характеристика |
+|---|---|
+| Процессор | Intel Core i5-11400F, 6 ядер, 2.6 ГГц |
+| Оперативная память | 32 ГБ |
+| Диск | 450 ГБ |
+| Видеокарта | NVIDIA GeForce GTX 1650, 4 ГБ |
+| Операционная система | Windows 11 с WSL2 Ubuntu 22.04+ или Ubuntu 22.04+ |
 
-GitLab использует общие PostgreSQL и Redis из namespace `db`; БД `gitlabhq_production`
-и роль создаются init-скриптом (`terraform/secrets.tf`).
+Terraform описывает физический профиль и распределение ресурсов между
+логическими узлами. По умолчанию `minikube` получает 4 CPU, 20 ГиБ RAM и
+100 ГиБ диска, а `minikube-m02` — 2 CPU, 8 ГиБ RAM и 100 ГиБ диска.
 
-```
-.
-├── terraform/            # namespaces, secrets, storage, helm releases, ingresses
-│   └── modules/manifests # применение multi-doc YAML из k8s/**
-├── k8s/                  # Helm values и K8s-манифесты по компонентам
-│   ├── proxy/  vcs/  ci/  secret/
-│   ├── db/pg  db/redis  db/ch
-│   ├── mb/  llm/ollama/  acl/  backup/
-│   ├── logs/  alert/  tracing/
-├── volumes/              # каталоги данных на хосте (зеркалят k8s/)
-├── ansible/              # bootstrap рабочей станции
-└── run.ps1               # запуск Ansible из Windows через WSL
-```
+## Используемые технологии
 
----
+| Технология | Назначение |
+|---|---|
+| Kubernetes (Minikube) | Локальный двухузловой кластер. |
+| Docker | Контейнерный runtime Minikube. |
+| Helm | Установка официальных чартов и конфигурация окружений. |
+| Ansible | Установка системных зависимостей и CLI-инструментов. |
+| Terraform | Источник распределения физических ресурсов сервера и узлов. |
+| HashiCorp Vault | Хранилище секретов. |
 
-## 1. Что необходимо установить
+### Сервисы кластера
 
-| Инструмент | Назначение |
-|------------|------------|
-| Docker Desktop / Docker Engine | драйвер minikube |
-| [minikube](https://minikube.sigs.k8s.io/docs/start/) | локальный кластер |
-| [kubectl](https://kubernetes.io/docs/tasks/tools/) | работа с кластером |
-| [Helm](https://helm.sh/docs/intro/install/) ≥ 3.14 | чарты |
-| [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.6 | оркестрация |
+| Namespace | Сервисы |
+|---|---|
+| `db` | PostgreSQL, pgAdmin, Redis, RedisInsight, ClickHouse |
+| `mb` | Kafka, Kafka UI |
+| `vcs` | GitLab, GitLab Container Registry |
+| `ci` | GitLab Runner |
+| `proxy` | NGINX Ingress Controller |
+| `llm` | Ollama, Open WebUI |
+| `acl` | Keycloak |
+| `secret` | Vault, Vault Secrets Operator |
+| `logs` | Prometheus, Alertmanager, Grafana, Jaeger, Exporters |
+| `backup` | K8up, MinIO |
 
-**Windows (winget):**
-```powershell
-winget install Docker.DockerDesktop
-winget install Kubernetes.minikube
-winget install Kubernetes.kubectl
-winget install Helm.Helm
-winget install Hashicorp.Terraform
-```
+## Быстрый запуск
 
-> На Windows всё это можно поставить одной командой через
-> WSL2 (см. раздел 9). Docker Desktop обязателен: он даёт и драйвер для minikube,
-> и Docker внутри WSL.
+Требуются Ubuntu 22.04+ или WSL2 Ubuntu и Docker (в Windows — Docker Desktop с
+WSL integration).
 
-**Linux / macOS:**
-```bash
-curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 \
-  && sudo install minikube-linux-amd64 /usr/local/bin/minikube
-curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
-  && sudo install kubectl /usr/local/bin/kubectl
-curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-brew install terraform   # macOS
-```
-
-Либо разом через Ansible (раздел 9).
-
----
-
-## 2. Что необходимо запустить
-
-### 2.1 Кластер (с монтированием каталога volumes)
+1. Подготовьте зависимости:
 
 ```bash
-# Linux / macOS
-minikube start --driver=docker --cpus=6 --memory=16384 --disk-size=60g \
-  --mount-string="$PWD/volumes:/volumes"
+bash scripts/prepare-host.sh
 ```
 
-```powershell
-# Windows (PowerShell, из корня репозитория)
-minikube start --driver=docker --cpus=6 --memory=16384 --disk-size=60g `
-  --mount-string="$PWD\volumes:/volumes"
-```
-
-`--mount-string` пробрасывает хостовый каталог `volumes/` в ноду как `/volumes`,
-поэтому данные БД остаются на хосте. GitLab тяжёлый — дайте кластеру ≥ 6 CPU и 16 ГБ RAM.
-
-> Память minikube не может превышать лимит Docker/WSL. Если увидите
-> `RSRC_OVER_ALLOC_MEM: Requested memory allocation ... is more than your system limit ...`,
-> уменьшите `--memory` (в Ansible — `minikube_memory` в `ansible/roles/bootstrap/defaults/main.yml`).
-
-### 2.2 Доступ к ingress (в отдельном терминале, оставить запущенным)
+2. Инициализируйте Terraform и проверьте профиль ресурсов:
 
 ```bash
-minikube tunnel          # Windows: от имени администратора
+export TF_CLI_CONFIG_FILE="$PWD/terraform/.terraformrc"
+terraform -chdir=terraform init
+terraform -chdir=terraform apply
 ```
 
-### 2.3 Развернуть стек
+3. Запустите Minikube самостоятельно, используя профиль Terraform:
 
 ```bash
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform apply -auto-approve
+bash scripts/start-minikube.sh
 ```
 
-Первый `apply` идёт 10–20 мин (образы + миграции БД).
-
-### 2.4 Прописать хосты
+4. Установите сервисы и Kubernetes-манифесты:
 
 ```bash
-kubectl get svc -n ingress ingress-nginx-controller   # взять EXTERNAL-IP
+bash scripts/start-cluster.sh
 ```
 
-Добавьте в `/etc/hosts` (Windows: `C:\Windows\System32\drivers\etc\hosts`), заменив `<IP>`:
+При первом запуске скрипт установит платформенные Helm-чарты и остановится,
+если Vault не инициализирован или необходимые секреты ещё не синхронизированы.
+Выполните первичную настройку ниже, заполните Vault и запустите команду снова.
+По умолчанию используется профиль `dev`.
 
-```
-<IP>  gitlab.local registry.local pg.local redis.local clickhouse.local kafka.local ollama.local vault.local keycloak.local grafana.local prometheus.local alert.local jaeger.local
-```
+## Первичная настройка Vault (один раз)
 
-> Для **Container Registry** (раздел 5) нужен ещё адрес в `/etc/docker/daemon.json` —
-> см. там же.
-
-### 2.5 Инициализировать и распечатать Vault
-
-Vault работает в режиме **standalone** с хранением на диске и после первого старта
-запечатан. Выполните один раз:
+После установки Vault и запуска pod `vault-0` выполните из корня репозитория
+одну команду:
 
 ```bash
-kubectl exec -n secret vault-0 -- vault operator init -key-shares=1 -key-threshold=1
-kubectl exec -n secret vault-0 -- vault operator unseal <UNSEAL_KEY>
+bash scripts/bootstrap-vault.sh
 ```
 
-Сохраните `Unseal Key` и `Initial Root Token` из вывода. UI: http://vault.local/ui
-(метод входа **Token**). После рестарта пода Vault нужно распечатать заново той же командой `unseal`.
+Скрипт проверит состояние Vault. Если Vault ещё не инициализирован, он попросит
+подтверждение `INIT` и выведет пять unseal keys и root token. **Скопируйте и
+сохраните их вне репозитория**: для последующих разблокировок понадобятся любые
+три ключа, а root token — для настройки. Затем скрипт запросит три ключа по
+очереди, сам поднимет port-forward, попросит root token без отображения ввода и
+настроит Kubernetes auth, KV v2, policies, роли и VSO. При повторном запуске
+инициализацию выполнять не будет.
 
-### 2.6 Зарегистрировать GitLab Runner
-
-1. http://gitlab.local, вход как `root`. Пароль:
-   `kubectl get secret gitlab-gitlab-initial-root-password -n vcs -o jsonpath='{.data.password}' | base64 -d`.
-2. **Admin → CI/CD → Runners → New instance runner** — скопируйте токен `glrt-...`.
-3. Пропишите в `terraform/terraform.tfvars` (`gitlab_runner_token = "glrt-..."`) и выполните `terraform apply`.
-
-### 2.7 Загрузить модель в Ollama (пример)
+После завершения внесите значения секретов из таблицы ниже через Vault UI или
+CLI. Проверьте синхронизацию VSO и запустите приложения:
 
 ```bash
-kubectl exec -it ollama-0 -n llm -- ollama pull llama3
+kubectl get vaultstaticsecret -A
+bash scripts/start-cluster.sh
 ```
 
----
+| Vault KV v2 путь | Ключи |
+|---|---|
+| `kv/db/postgres` | `POSTGRES_PASSWORD` |
+| `kv/db/postgres-app-credentials` | `gitlab_password`, `keycloak_password`, `exporter_password` |
+| `kv/db/pgadmin` | `PGADMIN_DEFAULT_EMAIL`, `PGADMIN_DEFAULT_PASSWORD` |
+| `kv/db/redis` | `REDIS_PASSWORD` |
+| `kv/db/clickhouse` | `CLICKHOUSE_PASSWORD` |
+| `kv/vcs/gitlab-postgresql` | `postgresql-password` — тот же пароль, что `gitlab_password` |
+| `kv/vcs/object-storage` | `connection` — JSON MinIO S3 connection с GitLab user credentials |
+| `kv/vcs/gitlab-root-password` | `password` — первоначальный root пароль GitLab |
+| `kv/acl/keycloak` | `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD`, `KC_DB_PASSWORD` |
+| `kv/backup/minio` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_GITLAB_ACCESS_KEY`, `MINIO_GITLAB_SECRET_KEY`, `MINIO_K8UP_ACCESS_KEY`, `MINIO_K8UP_SECRET_KEY` |
+| `kv/backup/k8up-s3` | `accessKeyID`, `secretAccessKey` — те же K8up credentials |
+| `kv/backup/k8up-restic` | `password` |
+| `kv/logs/smtp` | `password` |
+| `kv/ci/gitlab-runner` | `runner-token`, `runner-registration-token` — требуется только для Runner |
 
-## 3. Volumes
+Для доступа GitLab к S3-хранилищу MinIO значения `aws_access_key_id` и
+`aws_secret_access_key` внутри `connection` должны совпадать с
+`MINIO_GITLAB_ACCESS_KEY` и `MINIO_GITLAB_SECRET_KEY` в
+`kv/backup/minio`. Используйте отдельного MinIO-пользователя GitLab, не root
+учётную запись MinIO. Полный перечень потребителей и маппинг Secret указан в
+[`k8s/secret/vault-static-secrets.yaml`](./k8s/secret/vault-static-secrets.yaml).
 
-Каталоги в `volumes/` зеркалят структуру `k8s/`. Terraform создаёт StorageClass
-`local` (`no-provisioner`) и по одному PV на каждый PVC с `hostPath = /volumes/<папка>`,
-поэтому данные пишутся прямо в эти папки на хосте.
-
-| Компонент | Папка (хост) | PVC | PV | Размер |
-|-----------|--------------|-----|----|--------|
-| PostgreSQL | `volumes/db/pg` | `data-postgresql-0` | `pv-db-pg` | **5 Gi** |
-| Redis | `volumes/db/redis` | `data-redis-0` | `pv-db-redis` | **2 Gi** |
-| ClickHouse | `volumes/db/ch` | `data-clickhouse-0` | `pv-db-ch` | **10 Gi** |
-| Kafka | `volumes/mb` | `data-kafka-0` | `pv-mb` | **5 Gi** |
-| Ollama (модели) | `volumes/llm/ollama` | `models-ollama-0` | `pv-llm-ollama` | **30 Gi** |
-| GitLab — gitaly | `volumes/vcs/gitaly` | `repo-data-gitlab-gitaly-0` | `pv-vcs-gitaly` | **10 Gi** |
-| GitLab — MinIO | `volumes/vcs/minio` | `gitlab-minio` | `pv-vcs-minio` | **5 Gi** |
-| Vault | `volumes/secret` | `data-vault-0` | `pv-secret` | **2 Gi** |
-| Keycloak | `volumes/acl` | `data-keycloak-0` | `pv-acl` | **2 Gi** |
-| Container Registry | `volumes/vcs/registry` | `data-registry-0` | `pv-vcs-registry` | **10 Gi** |
-| Grafana | `volumes/logs/grafana` | `logs-grafana` | `pv-logs-grafana` | **2 Gi** |
-| Prometheus | `volumes/logs/prometheus` | (volumeClaimTemplate) | `pv-logs-prometheus` | **10 Gi** |
-| Alertmanager | `volumes/alert` | `storage-alertmanager-0` | `pv-alert` | **1 Gi** |
-| Бэкапы (MinIO) | `volumes/backups` | `data-minio-0` | `pv-backups` | **20 Gi** |
-
-Итого ~114 Gi. Модели Ollama могут занимать десятки ГБ — при необходимости увеличьте
-`--disk-size` и размер PV в `terraform/locals.tf`.
-
-pgAdmin, RedisInsight, Kafka UI, Open WebUI, GitLab Runner, Jaeger — без своего хранилища
-(stateless). Jaeger по умолчанию хранит трейсы в памяти пода.
-
-> **Prometheus** и **Grafana** подключаются к своим PV не через `claimRef`, а через
-> `volumeName` (`pv-logs-prometheus` / `pv-logs-grafana`) — так эти чарты умеют
-> привязываться к существующему PV. Имена PVC у чартов фиксированные и проверены
-> реальным `helm template`.
-
-> Единственное расхождение с зеркалом: манифесты лежат в `k8s/backup`, а данные — в
-> `volumes/backups`. Так папка называется по прямому указанию в задаче.
-
-> **Права доступа (только для нативного Linux).** PV используют `hostPath`, а он не
-> поддерживает `fsGroup`, поэтому непривилегированные контейнеры могут не получить доступ
-> к папкам. При ошибках записи выполните `chmod -R 0777 volumes` перед `terraform apply`.
-> В WSL2/Docker Desktop каталог монтируется как 0777, и это не требуется.
-
----
-
-## 4. Порты и маршруты
-
-Внешний доступ — только через ingress (host-based routing), класс `nginx`.
-
-| Компонент | Хост | Ingress → Service:port | URL |
-|-----------|------|------------------------|-----|
-| GitLab | `gitlab.local` | `gitlab-webservice-default:8181` | http://gitlab.local |
-| Container Registry | `registry.local` | `registry:5000` | http://registry.local/v2/ |
-| pgAdmin | `pg.local` | `pgadmin:80` | http://pg.local |
-| RedisInsight | `redis.local` | `redisinsight:5540` | http://redis.local |
-| ClickHouse | `clickhouse.local` | `clickhouse:8123` | http://clickhouse.local/play |
-| Kafka UI | `kafka.local` | `kafka-ui:8080` | http://kafka.local |
-| Open WebUI | `ollama.local` | `open-webui:8080` | http://ollama.local |
-| Vault | `vault.local` | `vault:8200` | http://vault.local/ui |
-| Keycloak | `keycloak.local` | `keycloak:8080` | http://keycloak.local/admin |
-| Grafana | `grafana.local` | `logs-grafana:80` | http://grafana.local |
-| Prometheus | `prometheus.local` | `logs-prometheus:9090` | http://prometheus.local |
-| Alertmanager | `alert.local` | `alertmanager:9093` | http://alert.local |
-| Jaeger | `jaeger.local` | `jaeger:16686` | http://jaeger.local |
-
-> У **Container Registry** отдельный набор аннотаций (`terraform/locals.tf` →
-> `registry_annotations`): без лимитов на rps/соединения, `proxy-body-size: 0`
-> (неограниченный размер образа), выключена буферизация и таймауты подняты до 900 с.
-> Иначе `docker push` упирался бы в DDoS-лимиты.
-
-Внутрикластерные адреса (для подключения из других подов):
-
-| Сервис | Адрес | Порт |
-|--------|-------|------|
-| PostgreSQL | `postgresql.db.svc.cluster.local` | 5432 |
-| Redis | `redis.db.svc.cluster.local` | 6379 |
-| ClickHouse (HTTP / native) | `clickhouse.db.svc.cluster.local` | 8123 / 9000 |
-| Kafka | `kafka.mb.svc.cluster.local` | 9092 |
-| Ollama | `ollama.llm.svc.cluster.local` | 11434 |
-| Vault | `vault.secret.svc.cluster.local` | 8200 |
-| Container Registry | `registry.vcs.svc.cluster.local` | 5000 |
-| Prometheus | `logs-prometheus.logs.svc.cluster.local` | 9090 |
-| Alertmanager | `alertmanager.alert.svc.cluster.local` | 9093 |
-| Jaeger (OTLP gRPC / HTTP) | `jaeger.tracing.svc.cluster.local` | 4317 / 4318 |
-| Jaeger (UI / query) | `jaeger.tracing.svc.cluster.local` | 16686 |
-| MinIO (S3) | `minio.backup.svc.cluster.local` | 9000 |
-
-Учётные данные по умолчанию (меняются в `terraform/terraform.tfvars`):
-
-| Сервис | Логин | Пароль |
-|--------|-------|--------|
-| PostgreSQL | `postgres` | `postgres` |
-| pgAdmin | `admin@local` | `admin` |
-| ClickHouse | `default` | `clickhouse` |
-| Keycloak | `admin` | `admin` |
-| Vault | — | `Initial Root Token` из `vault operator init` |
-| Grafana | `admin` | `admin` (`grafana_admin_password`) |
-| MinIO | `minio` | `minio123` (`minio_password`) |
-| Restic (шифрование бэкапов) | — | `restic` (`restic_password`) |
-
----
-
-## 5. Container Registry (локальные образы)
-
-Образы хранятся в `volumes/vcs/registry` на хосте. Реализация — официальный
-`registry:2` (Distribution) с PVC `data-registry-0`.
-
-### Почему не встроенный registry чарта GitLab
-
-Встроенный чарт `registry` из `gitlab/gitlab` **не поддерживает PVC**: в его
-Deployment нет ни `extraVolumes`, ни `persistence`, а `storage` по умолчанию —
-`filesystem: rootdirectory: /tmp/registry`, то есть данные живут в `emptyDir`
-пода и исчезают при пересоздании. Поэтому:
-
-- `global.registry.enabled: true` — GitLab знает о Registry и проксирует его;
-- `registry.enabled: false` — встроенный Deployment не создаётся;
-- Registry поднимается отдельным манифестом `k8s/vcs/registry.yaml`.
-
-GitLab сам генерирует всё нужное для аутентификации (shared-secrets job):
-
-| Секрет | Ключ | Назначение |
-|--------|------|------------|
-| `gitlab-registry-secret` | `registry-auth.crt` | публичный сертификат для проверки JWT (`rootcertbundle`) |
-| `gitlab-registry-httpsecret` | `secret` | общий секрет `http.secret` |
-
-Registry настроен через переменные окружения (`REGISTRY_*`) и проверяет токены
-локально по сертификату, а клиенту отдаёт `realm = http://gitlab.local/jwt/auth`.
-
-### Настроить Docker на небезопасный registry
-
-Registry работает по HTTP, поэтому его нужно добавить в исключения. В
-`/etc/docker/daemon.json` (Windows: Docker Desktop → **Settings → Docker Engine**):
-
-```json
-{
-  "insecure-registries": ["registry.local:80"]
-}
-```
-
-Затем перезапустить Docker (`sudo systemctl restart docker`). Проверка:
-
-```bash
-docker login registry.local        # логин/пароль — от GitLab (root + его пароль)
-docker pull alpine
-docker tag alpine registry.local/root/alpine:latest
-docker push registry.local/root/alpine:latest
-```
-
-Образ появится в проекте `root/alpine` (GitLab → **Deploy → Container Registry**).
-
-> Изнутри кластера (например, из GitLab CI) тот же registry доступен как
-> `registry.vcs.svc.cluster.local:5000` — без настройки `insecure-registries`,
-> если раннер настроен соответствующим образом.
-
----
-
-## 6. Мониторинг, алерты и трейсинг
-
-Три namespace, у каждого — свой веб-интерфейс.
-
-### 6.1 `k8s/logs` — Prometheus + Grafana
-
-Чарт `prometheus-community/kube-prometheus-stack` (`logs`) со своей Grafana:
-
-- Prometheus пишет в `volumes/logs/prometheus` (retention 15 дней);
-- Grafana хранит дашборды и пользователей в `volumes/logs/grafana`;
-- `alertmanager.enabled: false` — встроенный Alertmanager выключен, вместо него
-  используется отдельный релиз из `k8s/alert` (см. ниже);
-- Prometheus отправляет алерты на него через `prometheusSpec.alertingEndpoints`.
-
-Grafana: http://grafana.local (`admin` / `grafana_admin_password`).
-Prometheus: http://prometheus.local.
-
-### 6.2 `k8s/alert` — Alertmanager с веб-интерфейсом
-
-Отдельный релиз чарта `prometheus-community/alertmanager` в namespace `alert`:
-веб-UI на http://alert.local, состояние (silences, notification log) — в
-`volumes/alert`.
-
-Прометеус из `k8s/logs` шлёт алерты на сервис `alertmanager.alert:9093`.
-Получатели заданы в `k8s/alert/values.yaml` (`config.receivers`, по умолчанию —
-заглушка `default`); добавьте туда webhook/Slack/email.
-
-```bash
-# проверить, что Prometheus видит Alertmanager
-kubectl get --raw /api/v1/namespaces/logs/services/logs-prometheus:9090/proxy/api/v1/alertmanagers
-```
-
-### 6.3 `k8s/tracing` — Jaeger
-
-Чарт `jaegertracing/jaeger` (Jaeger v2, all-in-one) в namespace `tracing`.
-UI: http://jaeger.local. По умолчанию трейсы хранятся **в памяти** пода
-(`jaeger.storage`), поэтому отдельный том ему не нужен.
-
-Приём трейсов из приложений в кластере:
-
-| Протокол | Адрес |
-|----------|-------|
-| OTLP gRPC | `jaeger.tracing.svc.cluster.local:4317` |
-| OTLP HTTP | `jaeger.tracing.svc.cluster.local:4318` |
-| Zipkin | `jaeger.tracing.svc.cluster.local:9411` |
-| Jaeger agent (UDP) | `jaeger.tracing.svc.cluster.local:6831` |
-
-Пример для приложения в кластере:
-
-```
-OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger.tracing.svc.cluster.local:4318
-```
-
----
-
-## 7. Бэкапы (K8up)
-
-Бэкапами управляет оператор **K8up** (Restic) в namespace `backup`. Резервные копии всех
-PVC складываются в S3-совместимое хранилище **MinIO**, чьи данные физически лежат в
-`volumes/backups` на хосте.
+## Сеть
 
 Схема:
 
-```
-Schedule (в namespace db/mb/llm/vcs/secret/acl)
-   └─> backup-pod монтирует PVC этого namespace
-          └─> Restic шифрует и отправляет в MinIO (backup/minio:9000)
-                 └─> MinIO пишет в PVC data-minio-0 -> volumes/backups на хосте
+```text
+Браузер -> Ingress NGINX -> Service -> Pod -> PVC -> PV -> /volumes/... на minikube
 ```
 
-Расписание (по одному `Schedule` на namespace, все PVC бэкапятся автоматически):
-
-| Задача | Cron | Что делает |
-|--------|------|------------|
-| `backup` | `0 2 * * *` | ежедневный бэкап всех PVC |
-| `check` | `0 3 * * 0` | еженедельная проверка целостности репозитория |
-| `prune` | `0 4 * * 0` | еженедельная чистка, хранение `keepLast: 7`, `keepDaily: 7` |
-
-Бэкенд задан глобально через env-переменные оператора (`k8s/backup/values.yaml`):
-`BACKUP_GLOBAL*` + секреты `k8up-s3` и `k8up-restic`. Поэтому Schedule содержат только
-расписания — креды не дублируются по namespace.
-
-### Проверить и запустить вручную
+Для localhost-доступа запустите скрипт из корня репозитория:
 
 ```bash
-kubectl get schedule -A                       # список расписаний
-kubectl get backup,prune,check,snapshot -A    # история запусков
-kubectl get pods -n backup                    # MinIO + оператор K8up
-
-# внеплановый бэкап прямо сейчас
-kubectl create -n db -f - <<'EOF'
-apiVersion: k8up.io/v1
-kind: Backup
-metadata:
-  name: manual
-spec: {}
-EOF
+bash scripts/forward-ingress.sh
 ```
 
-### Восстановить данные
+| Имя | Интерфейс |
+|---|---|
+| `gitlab.local` / `registry.local` | GitLab / Container Registry |
+| `pg.local` / `redis.local` | pgAdmin / RedisInsight |
+| `clickhouse.local` / `kafka.local` | ClickHouse UI / Kafka UI |
+| `ollama.local` / `keycloak.local` / `vault.local` | Open WebUI / Keycloak / Vault |
+| `grafana.local` / `prometheus.local` / `alert.local` / `jaeger.local` | Grafana / Prometheus / Alertmanager / Jaeger |
+
+Для публикации в Интернет отдельно настройте TLS, firewall и внешний WAF/DDoS protection.
+
+## Мониторинг
+
+Prometheus собирает метрики Kubernetes, узлов, pod и экспортеров БД и Kafka.
+Правила алертов и настройки Grafana/Alertmanager находятся в `k8s/logs/`.
+SMTP-параметры задаются в `k8s/logs/values.yaml`. Пароль хранится в Vault.
+
+## Резервное копирование
+
+K8up выполняет резервное копирование ежедневно в 02:00. Расписание и срок
+хранения заданы в `k8s/backup/schedule.yaml`. MinIO хранит резервные копии в
+`volumes/backups`. Каталог следует копировать на отдельное хранилище.
+
+## Terraform state
+
+Terraform проверяет профиль ресурсов и не создаёт кластер. State по умолчанию
+хранится локально в `terraform/terraform.tfstate` и исключён из Git. Для работы
+выполните:
 
 ```bash
-kubectl get snapshots -n db                                  # найти snapshot ID
-kubectl create -n db -f - <<'EOF'
-apiVersion: k8up.io/v1
-kind: Restore
-metadata:
-  name: restore
-spec:
-  restoreMethod:
-    folder:
-      claimName: data-postgresql-0
-EOF
+export TF_CLI_CONFIG_FILE="$PWD/terraform/.terraformrc"
+terraform -chdir=terraform init
+terraform -chdir=terraform apply
 ```
 
-### Важно
-
-- **Пароль Restic** (`restic_password`, по умолчанию `restic`) — это ключ шифрования
-  бэкапов. Без него восстановление невозможно: смените его в `terraform.tfvars` и
-  сохраните копию **вне** кластера.
-- Пароль задаётся один раз: если поменять его после первого бэкапа, старые снапшоты
-  станут нечитаемыми.
-- Чтобы исключить конкретный PVC из бэкапа, добавьте ему аннотацию `k8up.io/backup=false`.
-
----
-
-## 8. Защита от DDoS (ingress)
-
-Реализована штатными средствами nginx-ingress — без сторонних WAF.
-
-**Контроллер** (`k8s/proxy/values.yaml`): доверенные заголовки `X-Forwarded-For`
-(`use-forwarded-headers`, `compute-full-forwarded-for`, `enable-real-ip`), лимит размера
-тела, коды ответа `429` вместо `503`.
-
-**Каждый Ingress** (аннотации из `terraform/locals.tf`):
-
-| Аннотация | Значение | Что делает |
-|-----------|----------|------------|
-| `limit-rps` | 20 | запросов/сек с одного IP |
-| `limit-burst-multiplier` | 5 | допустимый всплеск (20 × 5) |
-| `limit-connections` | 30 | одновременных соединений с одного IP |
-| `limit-rate` | 5 MiB/s | лимит скорости отдачи |
-| `limit-rate-after` | 10 MiB | включать лимит после N байт |
-| `proxy-body-size` | 100m | максимальный размер запроса |
-
-При превышении лимитов клиент получает `429 Too Many Requests`.
-
-> Усиление: OWASP ModSecurity/Coraza (`controller.config.enable-modsecurity: "true"`),
-> `denylist-source-range` или внешний WAF/Cloudflare перед кластером.
-
----
-
-## 9. Ansible: установка и запуск одной командой
-
-Ansible — управляющая машина только для Linux/macOS: на Windows он нативно не работает.
-Поэтому на Windows playbook запускается **внутри WSL2** через обёртку `run.ps1`.
-
-### Linux / macOS
-
-```bash
-sudo apt-get update && sudo apt-get install -y ansible    # или: brew install ansible
-ansible-playbook -i ansible/inventory.ini ansible/site.yml --ask-become-pass
-```
-
-`--ask-become-pass` (кратко `-K`) обязателен: роль повышает права через `sudo`, а sudo
-требует пароль. Пароль спрашивают один раз в начале.
-
-### Windows (WSL2)
-
-Подготовка (один раз):
-
-```powershell
-wsl --install -d Ubuntu          # Linux-дистрибутив (docker-desktop для этого не годится)
-```
-
-Перезагрузиться, затем в Docker Desktop включить
-**Settings → Resources → WSL Integration → Ubuntu**.
-
----
-
-## 10. Удаление
-
-```bash
-cd terraform && terraform destroy -auto-approve
-minikube delete
-```
-
-Данные остаются в `volumes/` на хосте — удалите каталоги вручную, если они больше не нужны.
+Чтобы изменить каталог хранения state, измените `path` в
+[`terraform/versions.tf`](./terraform/versions.tf), например на
+`../state/terraform.tfstate`. Путь задаётся относительно каталога `terraform/`.
+При смене пути перенесите существующий state и выполните
+`terraform -chdir=terraform init -migrate-state`; иначе Terraform может
+создать новый пустой state. Если Terraform ранее был настроен на старый S3
+backend, используйте ту же команду `init -migrate-state`, чтобы перенести
+удалённый state в локальный файл.

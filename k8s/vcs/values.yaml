@@ -1,20 +1,43 @@
 global:
   edition: ce
   hosts:
+    domain: local
+    registry:
+      name: registry.local
     https: false
-  ingress:
-    enabled: true
-    class: nginx
-    provider: nginx
-    configureCertmanager: false
-    tls:
-      enabled: false
   registry:
+    host: registry.local
     enabled: true
     api:
       protocol: http
       serviceName: registry
       port: 5000
+  ingress:
+    enabled: true
+    class: nginx
+    provider: nginx
+    configureCertmanager: false
+    annotations:
+      nginx.ingress.kubernetes.io/limit-rps: "20"
+      nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+      nginx.ingress.kubernetes.io/limit-connections: "30"
+      nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    tls:
+      enabled: false
+  appConfig:
+    object_store:
+      enabled: true
+      connection:
+        secret: gitlab-object-storage
+        key: connection
+    lfs:
+      enabled: true
+    artifacts:
+      enabled: true
+    uploads:
+      enabled: true
+    packages:
+      enabled: true
   psql:
     host: postgresql.db.svc.cluster.local
     port: 5432
@@ -27,12 +50,15 @@ global:
     host: redis.db.svc.cluster.local
     port: 6379
     auth:
-      enabled: false
+      enabled: true
+      secret: redis-secret
+      key: REDIS_PASSWORD
 
 nginx-ingress:
   enabled: false
-certmanager:
-  install: false
+installCertmanager: false
+certmanager-issuer:
+  email: infra-alerts@example.com
 prometheus:
   install: false
 gitlab-runner:
@@ -73,9 +99,3 @@ gitlab:
 
 gitlab-shell:
   minReplicas: 1
-
-minio:
-  persistence:
-    size: 5Gi
-    storageClass: local
-    volumeName: pv-vcs-minio

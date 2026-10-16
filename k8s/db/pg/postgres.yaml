@@ -34,12 +34,34 @@ spec:
             - containerPort: 5432
           env:
             - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: PGDATA
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_PASSWORD
+            - name: GITLAB_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app-credentials
+                  key: gitlab_password
+            - name: KEYCLOAK_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app-credentials
+                  key: keycloak_password
+            - name: POSTGRES_EXPORTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-app-credentials
+                  key: exporter_password
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -49,6 +71,7 @@ spec:
         - name: init
           configMap:
             name: postgres-init
+            defaultMode: 0755
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -76,12 +99,16 @@ spec:
     spec:
       containers:
         - name: pgadmin
-          image: dpage/pgadmin4:latest
+          image: dpage/pgadmin4:8.14
           ports:
             - containerPort: 80
           envFrom:
             - secretRef:
                 name: pgadmin-secret
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
 ---
 apiVersion: v1
 kind: Service

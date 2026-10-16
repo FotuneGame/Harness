@@ -13,6 +13,9 @@ spec:
     - name: native
       port: 9000
       targetPort: 9000
+    - name: metrics
+      port: 9363
+      targetPort: 9363
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -36,16 +39,31 @@ spec:
           ports:
             - containerPort: 8123
             - containerPort: 9000
+            - containerPort: 9363
+          envFrom:
+            - configMapRef:
+                name: clickhouse-config
           env:
-            - name: CLICKHOUSE_USER
-              value: default
             - name: CLICKHOUSE_PASSWORD
-              value: clickhouse
-            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
-              value: "1"
+              valueFrom:
+                secretKeyRef:
+                  name: clickhouse-secret
+                  key: CLICKHOUSE_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/clickhouse
+            - name: prometheus-config
+              mountPath: /etc/clickhouse-server/config.d/prometheus.xml
+              subPath: prometheus.xml
+              readOnly: true
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: clickhouse-config
   volumeClaimTemplates:
     - metadata:
         name: data

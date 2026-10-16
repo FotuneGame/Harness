@@ -30,12 +30,31 @@ spec:
       containers:
         - name: redis
           image: redis:latest
-          args: ["--appendonly", "yes"]
+          command: ["/bin/sh", "-c"]
+          args: ["exec redis-server /etc/redis/redis.conf --requirepass \"$REDIS_PASSWORD\""]
           ports:
             - containerPort: 6379
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: config
+              mountPath: /etc/redis/redis.conf
+              subPath: redis.conf
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -66,6 +85,10 @@ spec:
           image: redis/redisinsight:latest
           ports:
             - containerPort: 5540
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
 ---
 apiVersion: v1
 kind: Service

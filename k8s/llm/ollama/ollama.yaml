@@ -32,6 +32,10 @@ spec:
           image: ollama/ollama:latest
           ports:
             - containerPort: 11434
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
           volumeMounts:
             - name: models
               mountPath: /root/.ollama
@@ -65,8 +69,13 @@ spec:
           image: ghcr.io/open-webui/open-webui:main
           ports:
             - containerPort: 8080
-          env:
-            - { name: OLLAMA_BASE_URL, value: "http://ollama.llm.svc.cluster.local:11434" }
+          envFrom:
+            - configMapRef:
+                name: open-webui-config
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
 ---
 apiVersion: v1
 kind: Service

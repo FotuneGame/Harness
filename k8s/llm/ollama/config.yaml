@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: open-webui-config
+  namespace: llm
+data:
+  OLLAMA_BASE_URL: http://ollama.llm.svc.cluster.local:11434

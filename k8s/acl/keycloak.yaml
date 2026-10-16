@@ -33,6 +33,9 @@ spec:
           args: ["start-dev"]
           ports:
             - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: keycloak-config
           env:
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               valueFrom:
@@ -44,17 +47,11 @@ spec:
                 secretKeyRef:
                   name: keycloak-secret
                   key: KEYCLOAK_ADMIN_PASSWORD
-            - { name: KC_DB, value: postgres }
-            - { name: KC_DB_URL, value: "jdbc:postgresql://postgresql.db.svc.cluster.local:5432/keycloak" }
-            - { name: KC_DB_USERNAME, value: keycloak }
             - name: KC_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: keycloak-secret
                   key: KC_DB_PASSWORD
-            - { name: KC_HTTP_ENABLED, value: "true" }
-            - { name: KC_HOSTNAME_STRICT, value: "false" }
-            - { name: KC_PROXY_HEADERS, value: xforwarded }
           volumeMounts:
             - name: data
               mountPath: /opt/keycloak/data

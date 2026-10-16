@@ -1,54 +1,91 @@
 ---
-- name: Install base packages (Debian)
+- name: Установка базовых пакетов (Debian)
   ansible.builtin.apt:
     name: "{{ base_packages }}"
     state: present
     update_cache: true
   when: ansible_facts['os_family'] == "Debian"
 
-- name: Install base packages (RedHat)
+- name: Установка базовых пакетов (RedHat)
   ansible.builtin.dnf:
     name: "{{ base_packages }}"
     state: present
   when: ansible_facts['os_family'] == "RedHat"
 
-- name: Check docker
+- name: Проверка наличия Docker
   ansible.builtin.command: docker --version
   register: docker_check
   changed_when: false
   failed_when: false
 
-- name: Install docker (Debian)
+- name: Установка Docker (Debian)
   ansible.builtin.apt:
     name: docker.io
     state: present
   when: install_docker and docker_check.rc != 0 and ansible_facts['os_family'] == "Debian"
 
-- name: Install docker (RedHat)
+- name: Установка Docker (RedHat)
   ansible.builtin.dnf:
     name: docker
     state: present
   when: install_docker and docker_check.rc != 0 and ansible_facts['os_family'] == "RedHat"
 
-- name: Ensure docker service is running
+- name: Создание группы docker
+  ansible.builtin.group:
+    name: docker
+    state: present
+  when: install_docker
+
+- name: Добавление пользователя в группу docker
+  ansible.builtin.user:
+    name: "{{ docker_user }}"
+    groups: docker
+    append: true
+  when: install_docker
+
+- name: Сбор сведений о системных службах
+  ansible.builtin.service_facts:
+  when: install_docker
+
+- name: Запуск службы Docker
   ansible.builtin.service:
     name: docker
     state: started
     enabled: true
-  when: install_docker and docker_check.rc != 0
+  when: install_docker and 'docker.service' in ansible_facts.services
 
-- name: Install kubectl
+- name: Проверка наличия Minikube
+  ansible.builtin.command: minikube version
+  register: minikube_check
+  changed_when: false
+  failed_when: false
+
+- name: Установка Minikube, если он отсутствует
+  ansible.builtin.get_url:
+    url: "https://storage.googleapis.com/minikube/releases/{{ minikube_version }}/minikube-linux-amd64"
+    dest: /usr/local/bin/minikube
+    mode: "0755"
+  when: minikube_check.rc != 0
+
+- name: Проверка наличия kubectl
+  ansible.builtin.command: kubectl version --client
+  register: kubectl_check
+  changed_when: false
+  failed_when: false
+
+- name: Установка kubectl, если он отсутствует
   ansible.builtin.get_url:
     url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
     dest: /usr/local/bin/kubectl
     mode: "0755"
+  when: kubectl_check.rc != 0
 
-- name: Install Helm
+- name: Установка Helm
   ansible.builtin.shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
     creates: /usr/local/bin/helm
 
-- name: Install Terraform
+- name: Установка Terraform
   ansible.builtin.unarchive:
     src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
     dest: /usr/local/bin
@@ -56,17 +93,10 @@
     mode: "0755"
     creates: /usr/local/bin/terraform
 
-- name: Install minikube
-  ansible.builtin.get_url:
-    url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-    dest: /usr/local/bin/minikube
+- name: Установка Vault CLI
+  ansible.builtin.unarchive:
+    src: "https://releases.hashicorp.com/vault/{{ vault_version }}/vault_{{ vault_version }}_linux_amd64.zip"
+    dest: /usr/local/bin
+    remote_src: true
     mode: "0755"
-
-- name: Start minikube with the volumes mount
-  ansible.builtin.command: >-
-    minikube start --driver=docker
-    --cpus={{ minikube_cpus }} --memory={{ minikube_memory }} --disk-size={{ minikube_disk }}
-    --mount-string="{{ volumes_host_path }}:/volumes"
-  become_user: "{{ minikube_user }}"
-  register: minikube_start
-  changed_when: "'Done!' in minikube_start.stdout"
+    creates: /usr/local/bin/vault

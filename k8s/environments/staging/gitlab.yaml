@@ -1,0 +1,15 @@
+gitlab:
+  webservice:
+    minReplicas: 2
+    maxReplicas: 3
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+  sidekiq:
+    minReplicas: 2
+    maxReplicas: 3
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi

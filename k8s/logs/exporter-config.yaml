@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-exporter-config
+  namespace: db
+data:
+  DATA_SOURCE_URI: postgresql.db.svc.cluster.local:5432/postgres?sslmode=disable
+  DATA_SOURCE_USER: postgres_exporter
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-exporter-config
+  namespace: db
+data:
+  REDIS_ADDR: redis://redis.db.svc.cluster.local:6379
