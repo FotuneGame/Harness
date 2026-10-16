@@ -47,42 +47,6 @@ Ollama запрашивает GPU через `nvidia.com/gpu`.
 | `logs` | Prometheus, Alertmanager, Grafana, Jaeger, Exporters |
 | `backup` | K8up, MinIO |
 
-## Структура Kubernetes
-
-`k8s/Chart.yaml` задаёт базовый Helm chart. `k8s/values.yaml` содержит список
-namespaces; `k8s/templates/namespaces.yaml` создаёт их циклом Helm.
-`k8s/templates/volumes.yaml` создаёт StorageClass и PV по списку `storage.volumes`
-в `k8s/values.yaml`. Для каждого PV там указываются имя, размер, путь на узле и
-при необходимости PVC-привязка или labels. Имя узла хранения задаётся через
-`storage.nodeName`.
-В `k8s/charts/` находятся локальные charts платформы.
-Каждый манифест Kubernetes расположен отдельно в `templates/*.yaml`;
-переменные и параметры из `values.yaml` выводятся стандартными выражениями
-Helm `{{ ... }}`. В корне каждого chart лежат только `Chart.yaml`, `values.yaml`
-и профильные `values-*.yaml`. Values официальных charts и дополнительные файлы
-расположены в `templates/`; файлы с префиксом `_` не рендерятся локальным chart
-и передаются в upstream chart из `scripts/start-cluster.sh`.
-
-| Папка | Файлы и назначение |
-|---|---|
-| `acl` | `templates/config.yaml` — переменные окружения Keycloak; `templates/keycloak.yaml` — Service и StatefulSet. |
-| `backup` | `templates/minio.yaml` — MinIO и начальная настройка buckets/users; `templates/minio-policy.yaml` — политики MinIO; `templates/schedule.yaml` — суточный K8up backup; `values.yaml` — настройки локального chart; `templates/_k8up-values.yaml` — официальный K8up chart. |
-| `cicd` | `templates/vault-secrets.yaml` — Vault credentials для Runner и Argo CD; `values.yaml` — адрес и пути Vault для локального chart; `templates/_runner-values.yaml` — официальный GitLab Runner chart; `templates/_argocd-values.yaml` — официальный Argo CD chart. |
-| `db` | `templates/postgres*.yaml`, `redis*.yaml`, `clickhouse*.yaml` — workloads, настройки и переменные окружения БД. |
-| `gpu` | `values.yaml` — настройки официального NVIDIA device plugin chart. |
-| `hpa` | `templates/ui.yaml` — HPA для интерфейсов pgAdmin, RedisInsight, Kafka UI и Open WebUI; цели и порог CPU заданы в `values.yaml`. |
-| `llm` | `templates/config.yaml` — переменные окружения Open WebUI; `templates/ollama.yaml` — Ollama с опциональным GPU и Open WebUI. |
-| `logs` | `templates/alerts.yaml`, `templates/dashboard.yaml` — правила алертов и Grafana dashboard; `templates/exporter-config.yaml`, `templates/exporters.yaml` — экспортеры и ServiceMonitor с параметрами из `values.yaml`; `templates/_prometheus-values.yaml` — базовые значения Prometheus chart; профильные overrides — `values-development.yaml`, `values-staging.yaml`, `values-production.yaml`; `templates/_jaeger-values.yaml` — официальный Jaeger chart. |
-| `mb` | `templates/config.yaml`, `templates/kafka.yaml` — переменные окружения и workloads Kafka и Kafka UI. |
-| `proxy` | `templates/ingress.yaml` — маршруты и ограничения запросов; `values.yaml` — namespaces локального chart; `templates/_ingress-values.yaml` — официальный ingress-nginx chart. |
-| `secret` | `templates/auth-reviewer.yaml` — Kubernetes auth для Vault; `templates/vault-static-secrets.yaml` — синхронизация секретов из Vault; `templates/policies/_*.txt` — политики Vault в HCL; `values.yaml` — адрес Vault и namespaces; `templates/_vault-values.yaml` — официальный Vault chart. |
-| `vcs` | `templates/registry*.yaml` — GitLab Container Registry; `templates/_gitlab-values.yaml` — базовые значения GitLab chart; `values-development.yaml`, `values-staging.yaml`, `values-production.yaml` — профильные overrides. |
-
-Профили находятся в корне `k8s/charts/logs/` и `k8s/charts/vcs/`. Скрипт
-сопоставляет `HELM_ENV=dev|staging|prod` файлам `values-development.yaml`,
-`values-staging.yaml` и `values-production.yaml`. Версии и upstream-репозитории
-официальных charts зафиксированы в `scripts/start-cluster.sh`.
-
 ## Быстрый запуск
 
 Требуются Ubuntu 22.04+ или WSL2 Ubuntu и Docker (в Windows — Docker Desktop с
