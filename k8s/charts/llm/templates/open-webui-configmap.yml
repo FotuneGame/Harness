@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: open-webui-config
-  namespace: {{ .Release.Namespace }}
-data:
-{{- toYaml .Values.webui.env | nindent 2 }}

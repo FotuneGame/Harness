@@ -6,7 +6,7 @@ exporterEnv:
     DATA_SOURCE_URI: postgresql.db.svc.cluster.local:5432/postgres?sslmode=disable
     DATA_SOURCE_USER: postgres_exporter
   redis:
-    REDIS_ADDR: redis://redis.db.svc.cluster.local:6379
+    REDIS_ADDR: redis://redis-master.db.svc.cluster.local:6379
 
 # kube-prometheus-stack устанавливается как зависимость chart (Chart.yaml).
 kube-prometheus-stack:
@@ -86,15 +86,15 @@ kube-prometheus-stack:
     prometheusSpec:
       nodeSelector:
         platform.node: core
-      retention: 30d
+      retention: 7d
       serviceMonitorSelectorNilUsesHelmValues: false
       serviceMonitorNamespaceSelector: {}
       podMonitorSelectorNilUsesHelmValues: false
       podMonitorNamespaceSelector: {}
       resources:
         requests:
-          cpu: 1
-          memory: 4Gi
+          cpu: 200m
+          memory: 1Gi
       storageSpec:
         volumeClaimTemplate:
           spec:

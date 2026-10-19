@@ -1,59 +1,34 @@
 # Локальная инфраструктура
 
 Minikube-кластер из трёх узлов: `minikube` (платформенные сервисы),
-`minikube-m02` (LLM) и `minikube-m03` (собственные приложения, разворачиваются
-через Argo CD). Все действия описаны Ansible-ролями и запускаются одним
-playbook.
+`minikube-m02` (LLM) и `minikube-m03` (приложения из Argo CD). Развёртывание
+описано Ansible-ролями и запускается одним playbook.
 
-## Технические характеристики сервера
+## Узлы
 
-| Ресурс | Характеристика |
-|---|---|
-| Процессор | Intel Core i5-11400F, 6 ядер, 2.6 ГГц |
-| Оперативная память | 32 ГБ |
-| Диск | 450 ГБ |
-| Видеокарта | NVIDIA GeForce GTX 1650, 4 ГБ |
-| Операционная система | Windows 11 с WSL2 Ubuntu 22.04+ или Ubuntu 22.04+ |
+Профиль ресурсов задан в `terraform/variables.tf`.
 
-Terraform описывает физический профиль сервера и распределение ресурсов между
-логическими узлами (`terraform/variables.tf`). По умолчанию:
+| Узел | Роль | CPU | RAM | Диск | `platform.node` | Назначение |
+|---|---|---|---|---|---|---|
+| `minikube` | `platform` | 2 | 16 ГиБ | 100 ГиБ | `core` | Платформенные сервисы и мониторинг |
+| `minikube-m02` | `llm` | 2 | 8 ГиБ | 100 ГиБ | `llm` | llama.cpp, Open WebUI |
+| `minikube-m03` | `applications` | 2 | 4 ГиБ | 100 ГиБ | `apps` | Приложения из Argo CD |
 
-| Узел | Роль | CPU | RAM | Диск | Назначение |
-|---|---|---|---|---|---|
-| `minikube` | `platform` | 2 | 16 ГиБ | 100 ГиБ | Платформенные сервисы и мониторинг |
-| `minikube-m02` | `llm` | 2 | 8 ГиБ | 100 ГиБ | llama.cpp, Open WebUI |
-| `minikube-m03` | `applications` | 2 | 4 ГиБ | 100 ГиБ | Собственные приложения (Argo CD) |
+На узле LLM выставляется метка `platform.gpu`. Узел приложений закрыт taint-ом
+`workload=applications:NoSchedule` — приложения из Argo CD должны добавлять
+соответствующие tolerations. Изменение состава узлов требует `minikube delete`
+и повторного запуска операции 1.
 
-Узлы маркируются меткой `platform.node=core|llm|apps`; на GPU-узле
-(`minikube-m02`) выставляется `platform.gpu`. Узел приложений `minikube-m03`
-закрыт taint-ом `workload=applications:NoSchedule`: приложения из Argo CD
-должны добавлять соответствующие tolerations. Изменение состава узлов требует
-`minikube delete` и повторного запуска операции 1.
+## Состав кластера
 
-## Используемые технологии
-
-| Технология | Назначение |
-|---|---|
-| Kubernetes (Minikube) | Локальный трёхузловой кластер на драйвере Docker. |
-| Docker | Контейнерный runtime Minikube и локальные образы. |
-| Helm | Upstream-charts и локальные charts ресурсов платформы. |
-| Ansible | Установка зависимостей, запуск кластера, развёртывание сервисов. |
-| Terraform | Профиль физических ресурсов сервера и логических узлов. |
-| HashiCorp Vault и Vault Secrets Operator | Хранилище секретов и синхронизация их в Kubernetes. |
-| Argo CD | GitOps-развёртывание приложений на узле `applications`. |
-| Prometheus, Grafana, Alertmanager, Jaeger | Метрики, dashboards, алерты и трейсы. |
-| K8up и MinIO | Резервное копирование в S3-совместимое хранилище. |
-
-## Сервисы кластера
-
-Манифесты сгруппированы по компонентам в `k8s/charts/`: каждый ресурс
-Kubernetes описан отдельным файлом `[имя]-[тип].yml` в `templates/`, а значения
-лежат рядом в `values-dev.yaml`, `values-staging.yaml` и `values-prod.yaml`
-(профиль выбирается переменной `HELM_ENV`). Официальные charts подключены как
-`dependencies` в `Chart.yaml` и скачиваются в каталог `charts/` рядом с ним.
-Chart Vault и Vault Secrets Operator зафиксированы в репозитории
-(`k8s/charts/secret/charts/`), потому что репозиторий
-`helm.releases.hashicorp.com` недоступен.
+Манифесты сгруппированы по компонентам в `k8s/charts/<компонент>/`: каждый
+ресурс Kubernetes описан отдельным файлом `[имя]-[тип].yml` в `templates/`,
+значения лежат рядом в `values-dev.yaml`, `values-staging.yaml` и
+`values-prod.yaml` (профиль выбирается переменной `HELM_ENV`). Официальные
+charts подключены как `dependencies` в `Chart.yaml` и скачиваются в каталог
+`charts/` командой `helm dependency build`. Charts Vault и Vault Secrets
+Operator зафиксированы в репозитории (`k8s/charts/secret/charts/`), потому что
+репозиторий `helm.releases.hashicorp.com` недоступен.
 
 | Namespace | Узел | Сервисы |
 |---|---|---|
@@ -69,18 +44,18 @@ Chart Vault и Vault Secrets Operator зафиксированы в репози
 | `llm` | `llm` | llama.cpp, Open WebUI |
 | `applications` | `apps` | Приложения из Argo CD |
 
-Elasticsearch хранит данные в томе `volumes/db/es` (PVC `data-elasticsearch-0`,
-PV `pv-db-es`); для его работы в узле `minikube` выставляется
+Данные сервисов хранятся в каталогах `volumes/<namespace>/...` узла `minikube`
+(PV `pv-*` заранее привязаны к PVC). Для Elasticsearch в узле выставляется
 `vm.max_map_count=262144`.
 
 ## Подготовка
 
 Требуются Ubuntu 22.04+ или WSL2 Ubuntu, Docker (в Windows — Docker Desktop с
-включённой WSL integration) и Helm 3.17+. Для GPU в Ubuntu нужен NVIDIA driver
+включённой WSL integration) и Helm 3.17+. Для GPU в Ubuntu нужны NVIDIA driver
 и NVIDIA Container Toolkit; в WSL2 кластер работает без GPU, и llama.cpp
 использует CPU.
 
-Перед запуском запустите Docker Desktop и подготовьте host из корня репозитория:
+Запустите Docker Desktop и подготовьте host из корня репозитория:
 
 ```bash
 bash scripts/prepare-host.sh
@@ -88,55 +63,55 @@ bash scripts/prepare-host.sh
 
 Роль `bootstrap` устанавливает базовые пакеты, Docker, Minikube, kubectl, Helm,
 Terraform и Vault CLI, добавляет `metadata` в `/etc/wsl.conf`, создаёт
-пользователя `cluster` с доступом к Docker и назначает его пользователем WSL
-по умолчанию. При первом изменении конфигурации выполните `wsl.exe --shutdown`
-в Windows, откройте WSL заново и проверьте, что `whoami` выводит `cluster`.
+пользователя `cluster` с доступом к Docker и назначает его пользователем WSL по
+умолчанию. При первом изменении конфигурации выполните `wsl.exe --shutdown` в
+Windows, откройте WSL заново и проверьте, что `whoami` выводит `cluster`.
 Дальнейшие команды выполняйте из корня репозитория от имени `cluster`.
 
 ## Команды
 
-Все операции выполняются одним playbook; номер операции передаётся в
-`cluster_action`.
+Номер операции передаётся в `cluster_action`:
 
-| № | Действие | Команда | Результат |
-|---|---|---|---|
-| 1 | Настройка и запуск кластера | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=1` | Настраивает Terraform, запускает Minikube с шифрованием etcd, ставит базовые charts и настраивает Vault. После внесения секретов повторите команду для установки сервисов. |
-| 2 | Генерация ключей для Vault | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=2` | При первичной инициализации создаёт ключи; если Vault запечатан — запрашивает три unseal key и разблокирует его. |
-| 3 | Остановка кластера | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=3` | Останавливает ingress port-forward и Minikube. |
-| 4 | Перезагрузка кластера | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=4` | Запускает Minikube, разблокирует Vault при необходимости и обновляет charts. |
-| 5 | Включение проброса порта к сервисам кластера | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=5` | Запускает ingress на `127.0.0.1:443` и `127.0.0.1:80`. |
-| 6 | Выключение проброса порта к сервисам кластера | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=6` | Останавливает ingress port-forward. |
+| № | Действие | Команда |
+|---|---|---|
+| 1 | Настройка и запуск кластера | `ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=1` |
+| 2 | Генерация ключей и разблокировка Vault | `... -e cluster_action=2` |
+| 3 | Остановка кластера | `... -e cluster_action=3` |
+| 4 | Перезагрузка кластера | `... -e cluster_action=4` |
+| 5 | Включение проброса портов (`127.0.0.1:80`, `127.0.0.1:443`) | `... -e cluster_action=5` |
+| 6 | Выключение проброса портов | `... -e cluster_action=6` |
 
-Профиль значений выбирается переменной `HELM_ENV` (`dev` по умолчанию):
+Операция 1 настраивает Terraform, запускает Minikube с шифрованием etcd, ставит
+базовые charts и настраивает Vault. После внесения секретов повторите её, чтобы
+установить сервисы. Профиль значений выбирается переменной `HELM_ENV` (`dev` по
+умолчанию):
 
 ```bash
 HELM_ENV=staging ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=1
 ```
 
-Логика вынесена в роли `ansible/roles/`: `bootstrap` готовит систему,
-`minikube` запускает узлы по профилю Terraform, `platform` разворачивает Helm
-charts и сервисы, `vault` инициализирует, разблокирует и настраивает Vault,
-`ingress` настраивает имена `*.local` и проброс портов.
+Логика вынесена в роли `ansible/roles/`: `bootstrap` готовит систему, `minikube`
+запускает узлы по профилю Terraform, `platform` разворачивает Helm charts и
+сервисы, `vault` инициализирует и настраивает Vault, `ingress` настраивает имена
+`*.local` и проброс портов.
 
 ## Секреты
 
 Секреты хранятся только в Vault (KV v2) и не попадают в Helm values; в
-манифестах платформы описаны лишь объекты `VaultStaticSecret` в
+манифестах описаны лишь объекты `VaultStaticSecret` в
 `k8s/charts/secret/templates/vault-static-secrets.yaml`. Значения Secret в etcd
 шифруются: kube-apiserver запускается с `encryption-provider-config` (провайдер
 `aescbc`), ключ шифрования хранится в `volumes/minikube/encryption` и исключён
 из Git.
 
-Операция 1 устанавливает и настраивает Vault. После первого запуска внесите
-значения ниже через Vault CLI или UI, затем повторите операцию 1, чтобы
-установить сервисы. Для записи через CLI откройте port-forward в отдельном
-терминале:
+Внесите значения через Vault CLI или UI и повторите операцию 1. Для записи через
+CLI откройте port-forward в отдельном терминале:
 
 ```bash
 kubectl port-forward -n secret service/vault 8200:8200
 ```
 
-В другом терминале задайте адрес и сохранённый ограниченный token:
+В другом терминале:
 
 ```bash
 export VAULT_ADDR=http://127.0.0.1:8200
@@ -149,9 +124,8 @@ unset VAULT_TOKEN
 
 При первичной инициализации playbook выводит три unseal key для сохранения в
 защищённом месте и ограниченный CLI token со сроком действия 7 дней; root token
-используется только внутри роли и не сохраняется. Unseal keys нужны для
-разблокировки Vault после остановки кластера, token — только для операций с
-секретами. Не сохраняйте их в репозитории или shell history.
+используется только внутри роли и не сохраняется. Не сохраняйте ключи в
+репозитории или shell history.
 
 | Vault KV v2 путь | Ключи |
 |---|---|
@@ -182,8 +156,8 @@ unset VAULT_TOKEN
 правом `read_repository`. Argo CD обращается к GitLab по внутреннему адресу
 `http://gitlab-webservice-default.vcs.svc.cluster.local:8181/`. Сохраните в
 `kv/cicd/argocd-gitlab`: `type=git`, `url` с этим префиксом, `username` и
-`password` (PAT). Vault Secrets Operator создаст помеченный для Argo CD Secret в
-течение минуты.
+`password` (PAT) — Vault Secrets Operator создаст помеченный для Argo CD Secret
+в течение минуты.
 
 GitLab Runner обращается к GitLab по тому же внутреннему адресу: он задан в
 `gitlabUrl` и `clone_url` в `k8s/charts/cicd/values-[stage].yaml`, поэтому job'ы
@@ -192,14 +166,8 @@ GitLab Runner обращается к GitLab по тому же внутренн
 
 ## Доступные адреса сети
 
-Схема:
-
-```text
-Браузер -> Ingress NGINX -> Service -> Pod -> PVC -> PV -> /volumes/... на узле minikube
-```
-
-Включите проброс командами 5 и 6. Он слушает только localhost: HTTPS на
-`127.0.0.1:443`, HTTP на `127.0.0.1:80`.
+Схема: `Браузер -> Ingress NGINX -> Service -> Pod -> PVC -> PV -> /volumes/...`.
+Проброс включают команды 5 и 6; он слушает только localhost.
 
 | Имя | Сервис |
 |---|---|
@@ -212,21 +180,19 @@ GitLab Runner обращается к GitLab по тому же внутренн
 
 Ingress использует HTTPS и самоподписанный wildcard-сертификат для `*.local`.
 Чтобы браузер не показывал предупреждение, добавьте
-`volumes/proxy/tls/tls.crt` в доверенные сертификаты вашей ОС или браузера.
-Закрытый ключ лежит в `volumes/proxy/tls/tls.key` и исключён из Git. Для
-публикации в Интернет замените локальный сертификат сертификатом доверенного
-центра, настройте DNS, firewall и внешний WAF/DDoS protection.
+`volumes/proxy/tls/tls.crt` в доверенные сертификаты ОС или браузера. Закрытый
+ключ лежит в `volumes/proxy/tls/tls.key` и исключён из Git. Для публикации в
+Интернет замените локальный сертификат сертификатом доверенного центра,
+настройте DNS, firewall и внешний WAF/DDoS protection.
 
-## Мониторинг
+## Мониторинг и резервное копирование
 
 Prometheus собирает метрики Kubernetes, узлов, pod и экспортеров PostgreSQL,
 Redis, ClickHouse и Kafka. Alertmanager отправляет письма через SMTP (пароль в
-`kv/logs/smtp`), Grafana показывает dashboards, Jaeger принимает трейсы по
-OTLP. Правила алертов, dashboards и настройки компонентов лежат в
-`k8s/charts/logs/`. `prometheus-node-exporter` работает DaemonSet на всех узлах,
-включая узел приложений.
-
-## Резервное копирование
+`kv/logs/smtp`), Grafana показывает dashboards, Jaeger принимает трейсы по OTLP.
+Правила алертов, dashboards и настройки компонентов лежат в `k8s/charts/logs/`;
+`prometheus-node-exporter` работает DaemonSet на всех узлах, включая узел
+приложений.
 
 K8up выполняет резервное копирование ежедневно в 02:00, проверку — по
 воскресеньям в 03:00, очистку — по воскресеньям в 04:00. Расписание, сроки
@@ -240,11 +206,9 @@ K8up выполняет резервное копирование ежеднев
 
 Terraform проверяет профиль ресурсов и не создаёт кластер. Пока удалённое
 хранилище не настроено, state временно хранится локально в
-`terraform/terraform.tfstate` и исключён из Git. Такой режим подходит только для
-одного рабочего места и не защищает state от потери диска. Перед совместной
-работой настройте удалённый backend и перенесите state командой
-`terraform init -migrate-state`. Не запускайте `terraform init` с другим
-backend без предварительной миграции существующего state.
+`terraform/terraform.tfstate` и исключён из Git. Перед совместной работой
+настройте удалённый backend и перенесите state командой
+`terraform init -migrate-state`.
 
 ### Версии сервисов
 
@@ -261,17 +225,23 @@ backend без предварительной миграции существу�
 | jaeger | chart 4.16.1 |
 | vault | chart 0.34.1 |
 | vault-secrets-operator | chart 1.6.0 |
+| postgresql / redis | charts 18.12.4 / 28.3.1 |
+| clickhouse / elasticsearch | charts 9.4.4 / 22.1.6 |
+| pgadmin4 | chart 1.70.4 |
+| kafka | chart 32.4.3 |
+| keycloak | chart 25.2.0 |
+| minio | chart 5.4.0 |
+| open-webui | chart 17.0.0 |
 | k8up | chart 4.10.0 |
 | gitlab | chart 10.5.0 |
 | argo-cd | chart 10.10.5 |
 | gitlab-runner | chart 0.94.0 |
 | nvidia-device-plugin | chart 0.20.1 |
-| Elasticsearch | образ 8.17.0 |
-| pgAdmin | образ 8.14 |
 | llama.cpp | образ `ghcr.io/ggml-org/llama.cpp:server` (`server-cuda` при GPU) |
-| Open WebUI | образ `ghcr.io/open-webui/open-webui:main` |
-| PostgreSQL, Redis, ClickHouse, Kafka, MinIO, Keycloak, Kafka UI, RedisInsight | образы `latest` из upstream-репозиториев |
+| RedisInsight, Kafka UI | образы `latest` из upstream-репозиториев |
 
+Версионные образы Bitnami перенесены в репозиторий `bitnamilegacy/`, поэтому в
+values заданы `global.security.allowInsecureImages: true` и этот репозиторий.
 Обновляя образы `latest`, проверяйте совместимость с текущими values и томами;
 версии upstream-charts меняйте вместе с `Chart.lock`.
 

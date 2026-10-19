@@ -1,7 +1,6 @@
 namespaces:
   db: db
   mb: mb
-  llm: llm
 
 targets:
   - name: pgadmin
@@ -13,9 +12,6 @@ targets:
   - name: kafka-ui
     namespace: mb
     maxReplicas: 3
-  - name: open-webui
-    namespace: llm
-    maxReplicas: 2
 
 minReplicas: 1
 cpuTarget: 75

@@ -8,8 +8,9 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: clickhouse
+      app.kubernetes.io/name: clickhouse
+      app.kubernetes.io/instance: db
   endpoints:
-    - port: metrics
+    - port: http-metrics
       path: /metrics
       interval: 30s

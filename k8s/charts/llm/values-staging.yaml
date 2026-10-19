@@ -30,19 +30,40 @@ llama:
     ubatchSize: 128
     flashAttention: auto
 
-webui:
+# Open WebUI устанавливается как зависимость chart (Chart.yaml).
+# Service open-webui:8080, StatefulSet open-webui, PVC open-webui.
+open-webui:
+  enabled: true
+  fullnameOverride: open-webui
   image:
     repository: ghcr.io/open-webui/open-webui
     tag: main
     pullPolicy: IfNotPresent
+  service:
+    port: 8080
+  # Модель обслуживает llama.cpp, встроенные Ollama и Pipelines не нужны.
+  ollama:
+    enabled: false
+  pipelines:
+    enabled: false
+  openaiBaseApiUrl: http://llama.llm.svc.cluster.local:8080/v1
+  openaiApiKey: not-needed
+  # Одна реплика: websocket работает на встроенном менеджере без Redis.
+  websocket:
+    enabled: true
+    manager: ""
+    redis:
+      enabled: false
+  nodeSelector:
+    platform.node: llm
   resources:
     requests:
       cpu: 200m
       memory: 512Mi
-  env:
-    OPENAI_API_BASE_URL: http://llama.llm.svc.cluster.local:8080/v1
-    OPENAI_API_KEY: not-needed
-    ENABLE_OLLAMA_API: "false"
+  persistence:
+    enabled: true
+    storageClass: local
+    size: 2Gi
 
 perplexity:
   enabled: false

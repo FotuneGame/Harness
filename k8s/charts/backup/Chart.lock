@@ -2,5 +2,8 @@ dependencies:
 - name: k8up
   repository: https://k8up-io.github.io/k8up
   version: 4.10.0
-digest: sha256:cab6c114844246c6d0710e2e5e9793b0759369185da71c361704d52e865a60d7
-generated: "2026-10-19T08:16:20.244319511Z"
+- name: minio
+  repository: https://charts.min.io/
+  version: 5.4.0
+digest: sha256:40f131d14fb74595c7eb0243af1316720ca925f004c7c569e0cce712f74eedf8
+generated: "2026-10-19T12:11:49.334247906Z"

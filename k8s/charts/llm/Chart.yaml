@@ -3,3 +3,8 @@ name: llm
 description: llama.cpp and Open WebUI resources
 type: application
 version: 0.1.0
+dependencies:
+  - name: open-webui
+    version: 17.0.0
+    repository: https://open-webui.github.io/helm-charts
+    condition: open-webui.enabled

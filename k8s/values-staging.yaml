@@ -19,29 +19,35 @@ storage:
         namespace: db
         name: data-postgresql-0
       path: /volumes/db/pg
+    - name: pv-db-pgadmin
+      capacity: 2Gi
+      claim:
+        namespace: db
+        name: pgadmin
+      path: /volumes/db/pgadmin
     - name: pv-db-redis
       capacity: 2Gi
       claim:
         namespace: db
-        name: data-redis-0
+        name: redis-data-redis-master-0
       path: /volumes/db/redis
     - name: pv-db-ch
       capacity: 10Gi
       claim:
         namespace: db
-        name: data-clickhouse-0
+        name: data-clickhouse-shard0-0
       path: /volumes/db/ch
     - name: pv-db-es
       capacity: 10Gi
       claim:
         namespace: db
-        name: data-elasticsearch-0
+        name: data-elasticsearch-master-0
       path: /volumes/db/es
     - name: pv-mb
       capacity: 5Gi
       claim:
         namespace: mb
-        name: data-kafka-0
+        name: data-kafka-controller-0
       path: /volumes/mb
     - name: pv-llm-llama
       capacity: 30Gi
@@ -50,18 +56,19 @@ storage:
         namespace: llm
         name: models-llama-0
       path: /volumes/llm/llama
+    - name: pv-llm-webui
+      capacity: 2Gi
+      nodeName: minikube-m02
+      claim:
+        namespace: llm
+        name: open-webui
+      path: /volumes/llm/webui
     - name: pv-secret
       capacity: 2Gi
       claim:
         namespace: secret
         name: data-vault-0
       path: /volumes/secret
-    - name: pv-acl
-      capacity: 2Gi
-      claim:
-        namespace: acl
-        name: data-keycloak-0
-      path: /volumes/acl
     - name: pv-vcs-registry
       capacity: 10Gi
       claim:
@@ -72,7 +79,7 @@ storage:
       capacity: 20Gi
       claim:
         namespace: backup
-        name: data-minio-0
+        name: minio
       path: /volumes/backups
     - name: pv-logs-grafana
       capacity: 2Gi

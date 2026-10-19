@@ -1,0 +1,18 @@
+dependencies:
+- name: postgresql
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 18.12.4
+- name: redis
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 28.3.1
+- name: clickhouse
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 9.4.4
+- name: elasticsearch
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 22.1.6
+- name: pgadmin4
+  repository: https://helm.runix.net
+  version: 1.70.4
+digest: sha256:83f8ed38c9a1b1d02955c7e7529324f7dd39051956f174475390d245908338a7
+generated: "2026-10-19T12:10:46.041363262Z"

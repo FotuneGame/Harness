@@ -237,16 +237,40 @@
       - --timeout=10m
   changed_when: false
 
+- name: Ожидание готовности pgAdmin
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - deployment/pgadmin
+      - -n
+      - db
+      - --timeout=5m
+  changed_when: false
+
 - name: Ожидание готовности Redis
   ansible.builtin.command:
     argv:
       - kubectl
       - rollout
       - status
-      - statefulset/redis
+      - statefulset/redis-master
       - -n
       - db
       - --timeout=5m
+  changed_when: false
+
+- name: Ожидание готовности ClickHouse
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/clickhouse-shard0
+      - -n
+      - db
+      - --timeout=10m
   changed_when: false
 
 - name: Ожидание готовности Elasticsearch
@@ -255,9 +279,57 @@
       - kubectl
       - rollout
       - status
-      - statefulset/elasticsearch
+      - statefulset/elasticsearch-master
       - -n
       - db
+      - --timeout=10m
+  changed_when: false
+
+- name: Ожидание готовности Kafka
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/kafka-controller
+      - -n
+      - mb
+      - --timeout=10m
+  changed_when: false
+
+- name: Ожидание готовности Keycloak
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/keycloak
+      - -n
+      - acl
+      - --timeout=10m
+  changed_when: false
+
+- name: Ожидание готовности MinIO
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - deployment/minio
+      - -n
+      - backup
+      - --timeout=5m
+  changed_when: false
+
+- name: Ожидание готовности Open WebUI
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/open-webui
+      - -n
+      - llm
       - --timeout=10m
   changed_when: false
 

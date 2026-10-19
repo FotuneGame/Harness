@@ -64,7 +64,7 @@ gitlab:
         secret: gitlab-postgresql-password
         key: postgresql-password
     redis:
-      host: redis.db.svc.cluster.local
+      host: redis-master.db.svc.cluster.local
       port: 6379
       auth:
         enabled: true
@@ -89,19 +89,19 @@ gitlab:
     tokenIssuer: gitlab-issuer
   gitlab:
     webservice:
-      minReplicas: 2
-      maxReplicas: 3
+      minReplicas: 1
+      maxReplicas: 1
       resources:
         requests:
-          cpu: 500m
-          memory: 2Gi
+          cpu: 200m
+          memory: 1Gi
     sidekiq:
-      minReplicas: 2
-      maxReplicas: 3
+      minReplicas: 1
+      maxReplicas: 1
       resources:
         requests:
-          cpu: 500m
-          memory: 2Gi
+          cpu: 200m
+          memory: 1Gi
     gitaly:
       persistence:
         size: 10Gi

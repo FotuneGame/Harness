@@ -13,6 +13,32 @@ schedule:
   keepLast: 7
   keepDaily: 7
 
+# MinIO устанавливается как зависимость chart (Chart.yaml).
+# Service minio:9000, Deployment minio, PVC minio.
+minio:
+  enabled: true
+  fullnameOverride: minio
+  mode: standalone
+  # Учётные данные берутся из Secret, созданного Vault Secrets Operator.
+  existingSecret: minio-secret
+  # Бакеты, политики и пользователи создаёт Job minio-init (шаблон чарта).
+  buckets: []
+  policies: []
+  users: []
+  # hostPath-PV не поддерживает fsGroup, поэтому MinIO запускается от root.
+  securityContext:
+    enabled: false
+  nodeSelector:
+    platform.node: core
+  persistence:
+    enabled: true
+    storageClass: local
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
 # k8up устанавливается как зависимость chart (Chart.yaml).
 k8up:
   enabled: true

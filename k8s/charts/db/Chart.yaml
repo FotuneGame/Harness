@@ -1,5 +1,27 @@
 apiVersion: v2
 name: db
-description: PostgreSQL, Redis, ClickHouse, Elasticsearch and exporters resources
+description: PostgreSQL, Redis, ClickHouse, Elasticsearch, pgAdmin and RedisInsight resources
 type: application
 version: 0.1.0
+dependencies:
+  # Чарты Bitnami публикуются только в OCI-реестре Docker Hub.
+  - name: postgresql
+    version: 18.12.4
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: postgresql.enabled
+  - name: redis
+    version: 28.3.1
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis.enabled
+  - name: clickhouse
+    version: 9.4.4
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: clickhouse.enabled
+  - name: elasticsearch
+    version: 22.1.6
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: elasticsearch.enabled
+  - name: pgadmin4
+    version: 1.70.4
+    repository: https://helm.runix.net
+    condition: pgadmin4.enabled

@@ -9,6 +9,8 @@ platform_bootstrap_only: false
 platform_llm_node: minikube-m02
 
 # Helm-репозитории upstream charts.
+# Charts Bitnami публикуются только в OCI-реестре Docker Hub, поэтому
+# `helm repo add` для них не нужен (см. k8s/charts/*/Chart.yaml).
 # Репозиторий helm.releases.hashicorp.com недоступен, поэтому charts Vault и
 # Vault Secrets Operator зафиксированы в репозитории (platform_vendored_secret_charts).
 platform_helm_repositories:
@@ -26,9 +28,19 @@ platform_helm_repositories:
     url: https://nvidia.github.io/k8s-device-plugin
   - name: argo
     url: https://argoproj.github.io/argo-helm
+  - name: minio
+    url: https://charts.min.io/
+  - name: runix
+    url: https://helm.runix.net
+  - name: open-webui
+    url: https://open-webui.github.io/helm-charts
 
 # Charts платформы, зависимости которых скачиваются в charts/ рядом с Chart.yaml.
 platform_chart_dependencies:
+  - db
+  - mb
+  - acl
+  - llm
   - logs
   - backup
   - proxy

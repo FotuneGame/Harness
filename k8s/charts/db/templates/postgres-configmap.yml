@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: postgres-config
-  namespace: {{ .Release.Namespace }}
-data:
-{{- toYaml .Values.env.postgres | nindent 2 }}
