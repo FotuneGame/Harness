@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: {{ .Values.exporterEnv.namespaces.db }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      nodeSelector:
+        platform.node: core
+      containers:
+        - name: exporter
+          image: oliver006/redis_exporter:v1.66.0
+          ports:
+            - name: metrics
+              containerPort: 9121
+          envFrom:
+            - configMapRef:
+                name: redis-exporter-config
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi

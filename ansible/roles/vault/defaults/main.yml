@@ -1,0 +1,12 @@
+---
+vault_namespace: secret
+vault_pod: vault-0
+vault_unseal_keys_input: []
+vault_operator_ttl: 168h
+vault_auth_roles:
+  - db
+  - vcs
+  - acl
+  - cicd
+  - backup
+  - logs

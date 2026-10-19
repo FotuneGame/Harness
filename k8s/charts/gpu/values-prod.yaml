@@ -1,0 +1,9 @@
+# NVIDIA device plugin запускается на всех узлах (DaemonSet) и объявляет
+# ресурс nvidia.com/gpu там, где GPU действительно доступен.
+nvidia-device-plugin:
+  enabled: true
+  fullnameOverride: nvidia-device-plugin
+  nodeSelector: {}
+  # Узел приложений закрыт taint-ом workload=applications:NoSchedule.
+  tolerations:
+    - operator: Exists

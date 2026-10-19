@@ -1,0 +1,23 @@
+---
+# Узлы Minikube создаются по профилю Terraform в фиксированном порядке.
+minikube_nodes:
+  - role: platform
+    name: minikube
+    label: core
+  - role: llm
+    name: minikube-m02
+    label: llm
+  - role: applications
+    name: minikube-m03
+    label: apps
+
+minikube_node_label_key: platform.node
+minikube_application_taint: "workload=applications:NoSchedule"
+
+minikube_encryption_dir: "{{ repo_root }}/volumes/minikube/encryption"
+minikube_encryption_file: "{{ minikube_encryption_dir }}/encryption-config.yaml"
+minikube_encryption_probe_file: "{{ minikube_encryption_dir }}/.node-probe"
+minikube_node_encryption_file: /var/lib/minikube/certs/encryption-config.yaml
+minikube_mount_encryption_file: /volumes/minikube/encryption/encryption-config.yaml
+
+minikube_elasticsearch_sysctl: vm.max_map_count=262144

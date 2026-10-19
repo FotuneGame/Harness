@@ -1,0 +1,6 @@
+env:
+  postgres:
+    PGDATA: /var/lib/postgresql/data/pgdata
+  clickhouse:
+    CLICKHOUSE_USER: default
+    CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"

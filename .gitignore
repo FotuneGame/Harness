@@ -6,5 +6,13 @@ terraform/terraform.tfvars
 terraform/backend.hcl
 terraform/crash.log
 terraform/crash.*.log
+k8s/charts/*/charts/*
+# Chart Vault и Vault Secrets Operator: репозиторий helm.releases.hashicorp.com
+# недоступен, поэтому архивы лежат в репозитории.
+!k8s/charts/secret/charts/*.tgz
 **/__pycache__/
 *.py[cod]
+volumes/*
+volumes/**/*
+!volumes/**/
+!volumes/**/.gitkeep

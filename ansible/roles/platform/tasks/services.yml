@@ -1,0 +1,384 @@
+---
+- name: Чтение узла LLM
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - node
+      - "{{ platform_llm_node }}"
+      - -o
+      - json
+  changed_when: false
+  failed_when: false
+  register: platform_llm_node_json
+
+- name: Определение метки GPU
+  ansible.builtin.set_fact:
+    platform_gpu_label: >-
+      {{ ((platform_llm_node_json.stdout | default('{}', true) | from_json).metadata.labels
+          | default({}))['platform.gpu'] | default('false') }}
+
+- name: Установка NVIDIA device plugin
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-gpu
+      - ./k8s/charts/gpu
+      - -f
+      - "k8s/charts/gpu/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - kube-system
+      - --take-ownership
+      - --wait
+      - --timeout
+      - 5m
+  args:
+    chdir: "{{ repo_root }}"
+  register: platform_gpu_plugin
+  failed_when: false
+  when: platform_gpu_label == 'true'
+
+- name: Ожидание ресурса GPU на узле
+  ansible.builtin.shell: |
+    for attempt in $(seq 1 60); do
+      gpu="$(kubectl get node {{ platform_llm_node }} -o json | jq -r '.status.allocatable["nvidia.com/gpu"] // "0"')"
+      if [ -n "$gpu" ] && [ "$gpu" != "0" ]; then exit 0; fi
+      sleep 2
+    done
+    exit 1
+  args:
+    executable: /bin/bash
+  register: platform_gpu_wait
+  changed_when: false
+  failed_when: false
+  when:
+    - platform_gpu_label == 'true'
+    - (platform_gpu_plugin.rc | default(1)) == 0
+
+- name: Определение доступности GPU
+  ansible.builtin.set_fact:
+    platform_gpu_enabled: "{{ platform_gpu_label == 'true' and ((platform_gpu_wait.rc | default(1)) == 0) }}"
+
+- name: Предупреждение о недоступном NVIDIA device plugin в WSL
+  ansible.builtin.debug:
+    msg: "Предупреждение: NVIDIA device plugin недоступен в WSL2; llama.cpp будет работать на CPU."
+  when:
+    - platform_gpu_label == 'true'
+    - (platform_gpu_plugin.rc | default(1)) != 0
+    - platform_is_wsl | bool
+
+- name: Ошибка при недоступном NVIDIA device plugin
+  ansible.builtin.fail:
+    msg: "Не удалось установить NVIDIA device plugin. Проверьте GPU-доступность узла {{ platform_llm_node }}."
+  when:
+    - platform_gpu_label == 'true'
+    - (platform_gpu_plugin.rc | default(1)) != 0
+    - not (platform_is_wsl | bool)
+
+- name: Предупреждение об отсутствии ресурса GPU в WSL
+  ansible.builtin.debug:
+    msg: "Предупреждение: Kubernetes не обнаружил GPU в WSL2; llama.cpp будет работать на CPU."
+  when:
+    - platform_gpu_label == 'true'
+    - (platform_gpu_plugin.rc | default(1)) == 0
+    - (platform_gpu_wait.rc | default(1)) != 0
+    - platform_is_wsl | bool
+
+- name: Ошибка при отсутствии ресурса GPU
+  ansible.builtin.fail:
+    msg: "Узел {{ platform_llm_node }} не зарегистрировал ресурс nvidia.com/gpu."
+  when:
+    - platform_gpu_label == 'true'
+    - (platform_gpu_plugin.rc | default(1)) == 0
+    - (platform_gpu_wait.rc | default(1)) != 0
+    - not (platform_is_wsl | bool)
+
+- name: Установка баз данных
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-db
+      - ./k8s/charts/db
+      - -f
+      - "k8s/charts/db/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - db
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка Kafka
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-mb
+      - ./k8s/charts/mb
+      - -f
+      - "k8s/charts/mb/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - mb
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка Keycloak
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-acl
+      - ./k8s/charts/acl
+      - -f
+      - "k8s/charts/acl/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - acl
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка резервного копирования
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-backup
+      - ./k8s/charts/backup
+      - -f
+      - "k8s/charts/backup/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - backup
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка LLM
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-llm
+      - ./k8s/charts/llm
+      - -f
+      - "k8s/charts/llm/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - llm
+      - --set
+      - "llama.gpu.enabled={{ platform_gpu_enabled }}"
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка мониторинга
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-logs
+      - ./k8s/charts/logs
+      - -f
+      - "k8s/charts/logs/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - logs
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка ingress
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-proxy
+      - ./k8s/charts/proxy
+      - -f
+      - "k8s/charts/proxy/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - proxy
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Установка HPA
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-hpa
+      - ./k8s/charts/hpa
+      - -f
+      - "k8s/charts/hpa/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - default
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Ожидание готовности PostgreSQL
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/postgresql
+      - -n
+      - db
+      - --timeout=10m
+  changed_when: false
+
+- name: Ожидание готовности Redis
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/redis
+      - -n
+      - db
+      - --timeout=5m
+  changed_when: false
+
+- name: Ожидание готовности Elasticsearch
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - statefulset/elasticsearch
+      - -n
+      - db
+      - --timeout=10m
+  changed_when: false
+
+- name: Ожидание инициализации MinIO
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - wait
+      - --for=condition=complete
+      - job/minio-init
+      - -n
+      - backup
+      - --timeout=5m
+  changed_when: false
+
+# Имя релиза gitlab фиксирует имена ресурсов GitLab: gitlab-webservice-default.
+- name: Установка GitLab и Container Registry
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - gitlab
+      - ./k8s/charts/vcs
+      - -f
+      - "k8s/charts/vcs/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - vcs
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Ожидание готовности GitLab
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - deployment/gitlab-webservice-default
+      - -n
+      - vcs
+      - --timeout=20m
+  changed_when: false
+
+- name: Ожидание готовности Container Registry
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - deployment/registry
+      - -n
+      - vcs
+      - --timeout=10m
+  changed_when: false
+
+- name: Проверка секрета GitLab Runner
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - secret
+      - gitlab-runner-secret
+      - -n
+      - cicd
+  changed_when: false
+  failed_when: false
+  register: platform_runner_secret
+
+- name: Определение доступности GitLab Runner
+  ansible.builtin.set_fact:
+    platform_runner_enabled: "{{ platform_runner_secret.rc == 0 }}"
+
+- name: Пропуск GitLab Runner
+  ansible.builtin.debug:
+    msg: >-
+      GitLab Runner будет отключён: добавьте kv/cicd/gitlab-runner в Vault
+      и синхронизируйте секрет gitlab-runner-secret.
+  when: not (platform_runner_enabled | bool)
+
+- name: Установка Argo CD и GitLab Runner
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-cicd
+      - ./k8s/charts/cicd
+      - -f
+      - "k8s/charts/cicd/values-{{ platform_helm_env }}.yaml"
+      - --set
+      - "gitlab-runner.enabled={{ platform_runner_enabled }}"
+      - --namespace
+      - cicd
+      - --take-ownership
+      - --wait
+      - --timeout
+      - 10m
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Проверка учётных данных Argo CD для GitLab
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - secret
+      - argocd-gitlab-repository
+      - -n
+      - cicd
+  changed_when: false
+  failed_when: false
+  register: platform_argocd_repo_secret
+
+- name: Вывод подсказки по Argo CD
+  ansible.builtin.debug:
+    msg: >-
+      Argo CD установлен без учётных данных репозитория GitLab.
+      Добавьте kv/cicd/argocd-gitlab в Vault; VSO синхронизирует их автоматически.
+  when: platform_argocd_repo_secret.rc != 0
+
+- name: Итог развёртывания
+  ansible.builtin.debug:
+    msg: "Развёртывание кластера ({{ platform_helm_env }}) завершено. Запустите операцию 5 для доступа через localhost."

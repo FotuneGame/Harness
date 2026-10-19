@@ -1,5 +1,10 @@
 apiVersion: v2
 name: gpu
-description: Values for the NVIDIA device plugin
+description: NVIDIA device plugin for the GPU node
 type: application
 version: 0.1.0
+dependencies:
+  - name: nvidia-device-plugin
+    version: 0.20.1
+    repository: https://nvidia.github.io/k8s-device-plugin
+    condition: nvidia-device-plugin.enabled

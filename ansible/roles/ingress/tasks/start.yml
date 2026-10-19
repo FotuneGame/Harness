@@ -1,0 +1,137 @@
+---
+- name: Настройка имён хостов
+  ansible.builtin.include_tasks: hosts.yml
+
+- name: Проверка команды kubectl
+  ansible.builtin.shell: command -v kubectl
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+  register: ingress_kubectl
+
+- name: Проверка наличия kubectl
+  ansible.builtin.assert:
+    that:
+      - ingress_kubectl.rc == 0
+    fail_msg: "Команда kubectl не найдена. Установите kubectl и повторите запуск."
+
+- name: Определение контекста kubectl
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - config
+      - current-context
+  changed_when: false
+  register: ingress_context
+
+- name: Проверка контекста kubectl
+  ansible.builtin.assert:
+    that:
+      - ingress_context.stdout | trim == 'minikube'
+    fail_msg: "Активный context не minikube. Сначала запустите Minikube."
+
+- name: Проверка сервиса ingress
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - service
+      - "{{ ingress_service }}"
+      - -n
+      - "{{ ingress_namespace }}"
+  changed_when: false
+  failed_when: false
+  register: ingress_service_check
+
+- name: Проверка наличия ingress
+  ansible.builtin.assert:
+    that:
+      - ingress_service_check.rc == 0
+    fail_msg: "Ingress controller не найден. Сначала разверните сервисы операцией 1."
+
+- name: Создание каталога состояния
+  ansible.builtin.file:
+    path: "{{ ingress_state_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Проверка PID-файла
+  ansible.builtin.stat:
+    path: "{{ ingress_state_dir }}/ingress-forward.pid"
+  register: ingress_pid_file
+
+- name: Чтение PID проброса
+  ansible.builtin.slurp:
+    src: "{{ ingress_state_dir }}/ingress-forward.pid"
+  register: ingress_pid_raw
+  when: ingress_pid_file.stat.exists
+
+- name: Проверка существующего процесса
+  ansible.builtin.command: ps -p {{ ingress_pid_raw.content | b64decode | trim }} -o args=
+  changed_when: false
+  failed_when: false
+  register: ingress_existing_process
+  when: ingress_pid_file.stat.exists
+
+- name: Определение состояния проброса
+  ansible.builtin.set_fact:
+    ingress_forward_running: >-
+      {{ (ingress_pid_file.stat.exists | default(false)) and
+         ((ingress_existing_process.rc | default(1)) == 0) and
+         ('kubectl port-forward' in (ingress_existing_process.stdout | default(''))) and
+         ('service/{{ ingress_service }}' in (ingress_existing_process.stdout | default(''))) }}
+
+- name: Существующий проброс
+  ansible.builtin.debug:
+    msg: "Проброс ingress уже запущен (PID {{ ingress_pid_raw.content | b64decode | trim }})."
+  when: ingress_forward_running | bool
+
+- name: Запуск проброса ingress
+  block:
+    - name: Запуск port-forward
+      ansible.builtin.shell: |
+        nohup kubectl port-forward --address {{ ingress_listen_address }} -n {{ ingress_namespace }} \
+          service/{{ ingress_service }} {{ ingress_http_port }}:80 {{ ingress_https_port }}:443 \
+          >"{{ ingress_state_dir }}/ingress-forward.log" 2>&1 </dev/null &
+        echo $! >"{{ ingress_state_dir }}/ingress-forward.pid"
+      args:
+        executable: /bin/bash
+
+    - name: Ожидание готовности проброса
+      ansible.builtin.wait_for:
+        path: "{{ ingress_state_dir }}/ingress-forward.log"
+        search_regex: "Forwarding from 127.0.0.1:"
+        timeout: 20
+
+    - name: Права на файлы состояния
+      ansible.builtin.file:
+        path: "{{ ingress_state_dir }}/{{ item }}"
+        mode: "0600"
+      loop:
+        - ingress-forward.pid
+        - ingress-forward.log
+
+    - name: Проброс запущен
+      ansible.builtin.debug:
+        msg: "Проброс ingress запущен: http://*.local и https://*.local."
+  rescue:
+    - name: Чтение журнала проброса
+      ansible.builtin.slurp:
+        src: "{{ ingress_state_dir }}/ingress-forward.log"
+      register: ingress_log_raw
+      failed_when: false
+
+    - name: Вывод журнала проброса
+      ansible.builtin.debug:
+        msg: "{{ ingress_log_raw.content | default('') | b64decode }}"
+
+    - name: Удаление PID-файла
+      ansible.builtin.file:
+        path: "{{ ingress_state_dir }}/ingress-forward.pid"
+        state: absent
+
+    - name: Ошибка запуска проброса
+      ansible.builtin.fail:
+        msg: "Не удалось запустить проброс ingress."
+  when: not (ingress_forward_running | bool)

@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: {{ .Release.Namespace }}
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      nodeSelector:
+        platform.node: core
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          envFrom:
+            - secretRef:
+                name: minio-secret
+          command:
+            - sh
+            - -c
+            - |
+              until mc alias set local http://minio.backup.svc.cluster.local:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do sleep 3; done
+              mc mb --ignore-existing local/backups
+              for bucket in gitlab-artifacts gitlab-lfs gitlab-uploads gitlab-packages gitlab-pages; do
+                mc mb --ignore-existing "local/$bucket"
+              done
+              mc admin policy info local gitlab-storage >/dev/null 2>&1 || mc admin policy create local gitlab-storage /etc/minio/gitlab-policy.json
+              mc admin user info local "$MINIO_GITLAB_ACCESS_KEY" >/dev/null 2>&1 || mc admin user add local "$MINIO_GITLAB_ACCESS_KEY" "$MINIO_GITLAB_SECRET_KEY"
+              mc admin policy attach local gitlab-storage --user "$MINIO_GITLAB_ACCESS_KEY"
+              mc admin policy info local k8up-backups >/dev/null 2>&1 || mc admin policy create local k8up-backups /etc/minio/k8up-policy.json
+              mc admin user info local "$MINIO_K8UP_ACCESS_KEY" >/dev/null 2>&1 || mc admin user add local "$MINIO_K8UP_ACCESS_KEY" "$MINIO_K8UP_SECRET_KEY"
+              mc admin policy attach local k8up-backups --user "$MINIO_K8UP_ACCESS_KEY"
+          volumeMounts:
+            - name: policy
+              mountPath: /etc/minio
+              readOnly: true
+      volumes:
+        - name: policy
+          configMap:
+            name: minio-policy

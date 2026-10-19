@@ -1,0 +1,317 @@
+---
+- name: Проверка профиля Helm
+  ansible.builtin.assert:
+    that:
+      - platform_helm_env in ['dev', 'staging', 'prod']
+    fail_msg: "HELM_ENV должен быть одним из: dev, staging, prod."
+
+- name: Определение WSL
+  ansible.builtin.set_fact:
+    platform_is_wsl: "{{ 'microsoft' in (ansible_facts['kernel'] | lower) }}"
+
+- name: Проверка доступности Docker
+  ansible.builtin.command: docker info
+  changed_when: false
+  failed_when: false
+  register: platform_docker_info
+
+- name: Проверка результата Docker
+  ansible.builtin.assert:
+    that:
+      - platform_docker_info.rc == 0
+    fail_msg: "Docker недоступен. Запустите Docker Desktop или службу Docker."
+
+- name: Проверка статуса Minikube
+  ansible.builtin.command:
+    argv:
+      - minikube
+      - status
+      - -p
+      - minikube
+  changed_when: false
+  failed_when: false
+  register: platform_minikube_status
+
+- name: Проверка запуска Minikube
+  ansible.builtin.assert:
+    that:
+      - platform_minikube_status.rc == 0
+    fail_msg: "Minikube не запущен. Запустите его операцией 1 или 4."
+
+- name: Определение контекста kubectl
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - config
+      - current-context
+  changed_when: false
+  register: platform_context
+
+- name: Проверка контекста kubectl
+  ansible.builtin.assert:
+    that:
+      - platform_context.stdout | trim == 'minikube'
+    fail_msg: "Активный context kubectl не minikube. Сначала выберите профиль Minikube."
+
+- name: Проверка наличия openssl
+  ansible.builtin.shell: command -v openssl
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+  register: platform_openssl
+
+- name: Проверка результата openssl
+  ansible.builtin.assert:
+    that:
+      - platform_openssl.rc == 0
+    fail_msg: "Не найдена команда openssl. Установите OpenSSL перед созданием TLS-сертификата."
+
+- name: Ожидание готовности узлов
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - wait
+      - --for=condition=Ready
+      - node
+      - --all
+      - --timeout=5m
+  changed_when: false
+
+- name: Выбор контекста kubectl
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - config
+      - use-context
+      - minikube
+  changed_when: false
+
+- name: Проверка поддержки Helm --take-ownership
+  ansible.builtin.shell: helm upgrade --help | grep -q -- '--take-ownership'
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+  register: platform_helm_take_ownership
+
+- name: Проверка версии Helm
+  ansible.builtin.assert:
+    that:
+      - platform_helm_take_ownership.rc == 0
+    fail_msg: "Требуется Helm 3.17 или новее для безопасного переноса существующих ресурсов."
+
+- name: Подключение Helm-репозиториев
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ item.name }}"
+      - "{{ item.url }}"
+      - --force-update
+  loop: "{{ platform_helm_repositories }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Обновление Helm-репозиториев
+  ansible.builtin.command:
+    argv: >-
+      {{ ['helm', 'repo', 'update']
+         + (platform_helm_repositories | map(attribute='name') | list) }}
+  changed_when: false
+
+- name: Загрузка зависимостей charts
+  ansible.builtin.command:
+    argv:
+      - helm
+      - dependency
+      - build
+      - "{{ repo_root }}/k8s/charts/{{ item }}"
+  loop: "{{ platform_chart_dependencies }}"
+  loop_control:
+    label: "{{ item }}"
+  changed_when: false
+
+- name: Проверка архивов chart secret
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/k8s/charts/secret/charts/{{ item }}"
+  loop: "{{ platform_vendored_secret_charts }}"
+  loop_control:
+    label: "{{ item }}"
+  register: platform_secret_chart_archives
+
+- name: Проверка наличия архивов chart secret
+  ansible.builtin.assert:
+    that:
+      - >-
+        platform_secret_chart_archives.results
+        | selectattr('stat.exists') | list | length == platform_vendored_secret_charts | length
+    fail_msg: >-
+      В k8s/charts/secret/charts должны находиться архивы
+      {{ platform_vendored_secret_charts | join(', ') }}:
+      репозиторий helm.releases.hashicorp.com недоступен, поэтому charts
+      Vault и Vault Secrets Operator зафиксированы в репозитории.
+
+- name: Проверка базового chart платформы
+  ansible.builtin.command:
+    argv:
+      - helm
+      - lint
+      - ./k8s
+      - -f
+      - "k8s/values-{{ platform_helm_env }}.yaml"
+  args:
+    chdir: "{{ repo_root }}"
+  changed_when: false
+
+- name: Поиск charts компонентов
+  ansible.builtin.find:
+    paths: "{{ repo_root }}/k8s/charts"
+    file_type: directory
+  register: platform_chart_dirs
+
+- name: Проверка charts компонентов
+  ansible.builtin.command:
+    argv:
+      - helm
+      - lint
+      - "{{ item.path }}"
+      - -f
+      - "{{ item.path }}/values-{{ platform_helm_env }}.yaml"
+  loop: "{{ platform_chart_dirs.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  changed_when: false
+
+- name: Установка базового chart платформы
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-foundation
+      - ./k8s
+      - -f
+      - "k8s/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - default
+      - --take-ownership
+      - --wait
+      - --timeout
+      - 5m
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Создание каталога TLS
+  ansible.builtin.file:
+    path: "{{ repo_root }}/volumes/proxy/tls"
+    state: directory
+    mode: "0755"
+
+- name: Проверка TLS-сертификата
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/volumes/proxy/tls/tls.crt"
+  register: platform_tls_crt
+
+- name: Проверка TLS-ключа
+  ansible.builtin.stat:
+    path: "{{ repo_root }}/volumes/proxy/tls/tls.key"
+  register: platform_tls_key
+
+- name: Генерация самоподписанного сертификата
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -nodes
+      - -days
+      - "3650"
+      - -newkey
+      - rsa:2048
+      - -keyout
+      - "{{ repo_root }}/volumes/proxy/tls/tls.key"
+      - -out
+      - "{{ repo_root }}/volumes/proxy/tls/tls.crt"
+      - -subj
+      - /CN=*.local
+      - -addext
+      - subjectAltName=DNS:*.local,DNS:local
+  when: >-
+    not (platform_tls_crt.stat.exists and platform_tls_crt.stat.size > 0 and
+         platform_tls_key.stat.exists and platform_tls_key.stat.size > 0)
+
+- name: Установка прав на TLS-ключ
+  ansible.builtin.file:
+    path: "{{ repo_root }}/volumes/proxy/tls/tls.key"
+    mode: "0600"
+
+- name: Создание TLS-секрета в namespace
+  ansible.builtin.shell: >-
+    kubectl create secret tls local-wildcard-tls
+    --cert="{{ repo_root }}/volumes/proxy/tls/tls.crt"
+    --key="{{ repo_root }}/volumes/proxy/tls/tls.key"
+    --namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
+  args:
+    executable: /bin/bash
+  loop:
+    - db
+    - mb
+    - llm
+    - secret
+    - acl
+    - vcs
+    - logs
+    - cicd
+
+- name: Установка Vault и Vault Secrets Operator
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - platform-secret
+      - ./k8s/charts/secret
+      - -f
+      - "k8s/charts/secret/values-{{ platform_helm_env }}.yaml"
+      - --namespace
+      - secret
+      - --take-ownership
+  args:
+    chdir: "{{ repo_root }}"
+
+- name: Ожидание запуска Vault
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - wait
+      - "--for=jsonpath={.status.phase}=Running"
+      - pod/vault-0
+      - -n
+      - secret
+      - --timeout=10m
+  changed_when: false
+
+- name: Ожидание CRD Vault
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - wait
+      - --for=condition=Established
+      - "crd/{{ item }}"
+      - --timeout=5m
+  loop:
+    - vaultconnections.secrets.hashicorp.com
+    - vaultauths.secrets.hashicorp.com
+    - vaultstaticsecrets.secrets.hashicorp.com
+  changed_when: false
+
+- name: Завершение после установки базовых charts
+  ansible.builtin.debug:
+    msg: "Базовые charts установлены; Vault готов к инициализации."
+  when: platform_bootstrap_only | bool
+
+- name: Развёртывание сервисов платформы
+  ansible.builtin.include_tasks: deploy.yml
+  when: not (platform_bootstrap_only | bool)

@@ -1,0 +1,55 @@
+argo-cd:
+  enabled: true
+  fullnameOverride: argocd
+  global:
+    domain: argocd.local
+    nodeSelector:
+      platform.node: core
+  configs:
+    cm:
+      url: http://argocd.local
+  server:
+    insecure: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  controller:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+  repoServer:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  applicationSet:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+
+gitlab-runner:
+  enabled: true
+  nodeSelector:
+    platform.node: core
+  gitlabUrl: http://gitlab-webservice-default.vcs.svc.cluster.local:8181
+  concurrent: 2
+  rbac:
+    create: true
+  runners:
+    secret: gitlab-runner-secret
+    config: |
+      [[runners]]
+        clone_url = "http://gitlab-webservice-default.vcs.svc.cluster.local:8181"
+        [runners.kubernetes]
+          namespace = "cicd"
+          image = "alpine:latest"
+          privileged = false
+          cpu_limit = "1"
+          memory_limit = "1Gi"

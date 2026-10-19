@@ -1,5 +1,14 @@
 apiVersion: v2
 name: cicd
-description: GitLab Runner credentials and Argo CD configuration
+description: Argo CD and GitLab Runner for the platform
 type: application
 version: 0.1.0
+dependencies:
+  - name: argo-cd
+    version: 10.10.5
+    repository: https://argoproj.github.io/argo-helm
+    condition: argo-cd.enabled
+  - name: gitlab-runner
+    version: 0.94.0
+    repository: https://charts.gitlab.io
+    condition: gitlab-runner.enabled

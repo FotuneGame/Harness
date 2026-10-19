@@ -9,6 +9,7 @@ output "host_profile" {
 }
 
 output "node_profiles" {
-  description = "Ресурсы логических узлов Kubernetes для платформенных компонентов и приложений."
+  description = "Ресурсы логических узлов Kubernetes: платформенные сервисы, LLM и приложения."
   value       = { for role, node in terraform_data.node_profile : role => node.output }
 }
+

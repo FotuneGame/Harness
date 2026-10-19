@@ -53,24 +53,30 @@ variable "nodes" {
 
   default = {
     platform = {
-      cpu_cores  = 4
-      memory_gib = 20
+      cpu_cores  = 2
+      memory_gib = 16
+      disk_gib   = 100
+    }
+    llm = {
+      cpu_cores  = 2
+      memory_gib = 8
       disk_gib   = 100
     }
     applications = {
       cpu_cores  = 2
-      memory_gib = 8
+      memory_gib = 4
       disk_gib   = 100
     }
   }
 
   validation {
     condition = (
-      length(var.nodes) == 2 &&
+      length(var.nodes) == 3 &&
       contains(keys(var.nodes), "platform") &&
+      contains(keys(var.nodes), "llm") &&
       contains(keys(var.nodes), "applications")
     )
-    error_message = "Определите ровно два узла: platform и applications."
+    error_message = "Определите ровно три узла: platform, llm и applications."
   }
 
   validation {
@@ -87,7 +93,11 @@ variable "nodes" {
   }
 
   validation {
-    condition     = try(var.nodes.platform.disk_gib == var.nodes.applications.disk_gib, false)
-    error_message = "Для двухузлового профиля Minikube укажите одинаковый размер диска обоих узлов."
+    condition = (
+      var.nodes.platform.disk_gib == var.nodes.llm.disk_gib &&
+      var.nodes.platform.disk_gib == var.nodes.applications.disk_gib
+    )
+    error_message = "Minikube создаёт одинаковый размер диска для всех узлов: укажите равный disk_gib в Terraform."
   }
 }
+

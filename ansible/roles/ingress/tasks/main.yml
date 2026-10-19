@@ -1,0 +1,3 @@
+---
+- name: Настройка имён хостов
+  ansible.builtin.include_tasks: hosts.yml

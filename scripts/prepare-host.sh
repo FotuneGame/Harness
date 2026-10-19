@@ -13,4 +13,5 @@ if ! command -v ansible-playbook >/dev/null 2>&1; then
   sudo apt-get install -y ansible
 fi
 
-ansible-playbook -i ansible/inventory.ini ansible/site.yml --ask-become-pass
+sudo -- ansible-playbook -i ansible/inventory.ini ansible/site.yml \
+  -e '{"ansible_become": false}'

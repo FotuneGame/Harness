@@ -1,0 +1,9 @@
+dependencies:
+- name: argo-cd
+  repository: https://argoproj.github.io/argo-helm
+  version: 10.10.5
+- name: gitlab-runner
+  repository: https://charts.gitlab.io
+  version: 0.94.0
+digest: sha256:a2fc5e5fa776cb01a01f974482cd862d1384e12908409119a1442b853b85da4b
+generated: "2026-10-19T09:45:02.733584937+03:00"

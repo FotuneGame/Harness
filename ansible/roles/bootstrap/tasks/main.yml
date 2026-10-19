@@ -1,34 +1,96 @@
 ---
-- name: Установка базовых пакетов (Debian)
+- name: Проверка прерванных операций dpkg
+  ansible.builtin.command: dpkg --audit
+  register: dpkg_audit
+  changed_when: false
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Обновление индексов пакетов Debian
   ansible.builtin.apt:
-    name: "{{ base_packages }}"
-    state: present
     update_cache: true
   when: ansible_facts['os_family'] == "Debian"
 
-- name: Установка базовых пакетов (RedHat)
-  ansible.builtin.dnf:
+- name: Исправление незавершённых зависимостей пакетов Debian
+  ansible.builtin.command: apt-get -y --fix-broken install
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  register: dpkg_repair
+  changed_when: dpkg_repair.rc == 0
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - dpkg_audit.stdout | length > 0
+
+- name: Повторная проверка состояния dpkg
+  ansible.builtin.command: dpkg --audit
+  register: dpkg_audit_after_repair
+  changed_when: false
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Завершение прерванной настройки пакетов dpkg
+  ansible.builtin.command: dpkg --configure -a
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  when:
+    - ansible_facts['os_family'] == "Debian"
+    - dpkg_audit_after_repair.stdout | length > 0
+
+- name: Установка базовых пакетов
+  ansible.builtin.package:
     name: "{{ base_packages }}"
     state: present
-  when: ansible_facts['os_family'] == "RedHat"
 
-- name: Проверка наличия Docker
-  ansible.builtin.command: docker --version
-  register: docker_check
-  changed_when: false
-  failed_when: false
-
-- name: Установка Docker (Debian)
-  ansible.builtin.apt:
-    name: docker.io
+- name: Установка Docker
+  ansible.builtin.package:
+    name: "{{ 'docker.io' if ansible_facts['os_family'] == 'Debian' else 'docker' }}"
     state: present
-  when: install_docker and docker_check.rc != 0 and ansible_facts['os_family'] == "Debian"
+  when:
+    - install_docker
+    - ansible_facts['os_family'] in ['Debian', 'RedHat']
 
-- name: Установка Docker (RedHat)
-  ansible.builtin.dnf:
-    name: docker
+- name: Создание основной группы пользователя кластера
+  ansible.builtin.group:
+    name: "{{ cluster_user }}"
     state: present
-  when: install_docker and docker_check.rc != 0 and ansible_facts['os_family'] == "RedHat"
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
+
+- name: Создание пользователя кластера в WSL
+  ansible.builtin.user:
+    name: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    shell: /bin/bash
+    create_home: true
+    groups:
+      - sudo
+    append: true
+    state: present
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
+
+- name: Разрешение пользователю кластера запускать административные команды
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ cluster_user }}"
+    content: "{{ cluster_user }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: "visudo -cf %s"
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
+
+- name: Передача пользователю кластера Terraform workspace
+  ansible.builtin.file:
+    path: "{{ repo_root }}/terraform"
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    recurse: true
+    state: directory
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
+
+- name: Передача пользователю кластера каталога томов
+  ansible.builtin.file:
+    path: "{{ repo_root }}/volumes"
+    owner: "{{ cluster_user }}"
+    group: "{{ cluster_user }}"
+    state: directory
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
 
 - name: Создание группы docker
   ansible.builtin.group:
@@ -164,13 +226,45 @@
   args:
     creates: /usr/local/bin/helm
 
-- name: Установка Terraform
+- name: Проверка установленной версии Terraform
+  ansible.builtin.command: terraform version
+  register: terraform_check
+  changed_when: false
+  failed_when: false
+
+- name: Определение установленной версии Terraform
+  ansible.builtin.set_fact:
+    installed_terraform_version: >-
+      {{ (terraform_check.stdout | regex_findall('Terraform v([0-9.]+)') | first) | default('0.0.0', true) }}
+
+- name: Загрузка архива Terraform
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+    dest: "/tmp/terraform_{{ terraform_version }}_linux_amd64.zip"
+    mode: "0644"
+    timeout: 120
+  register: terraform_archive
+  retries: 3
+  delay: 5
+  until: terraform_archive is succeeded
+  when:
+    - terraform_check.rc != 0 or installed_terraform_version is version(terraform_version, '<', version_type='loose')
+
+- name: Установка или обновление Terraform
   ansible.builtin.unarchive:
-    src: "https://releases.hashicorp.com/terraform/{{ terraform_version }}/terraform_{{ terraform_version }}_linux_amd64.zip"
+    src: "/tmp/terraform_{{ terraform_version }}_linux_amd64.zip"
     dest: /usr/local/bin
     remote_src: true
     mode: "0755"
-    creates: /usr/local/bin/terraform
+  when:
+    - terraform_check.rc != 0 or installed_terraform_version is version(terraform_version, '<', version_type='loose')
+
+- name: Удаление архива Terraform
+  ansible.builtin.file:
+    path: "/tmp/terraform_{{ terraform_version }}_linux_amd64.zip"
+    state: absent
+  when:
+    - terraform_check.rc != 0 or installed_terraform_version is version(terraform_version, '<', version_type='loose')
 
 - name: Установка Vault CLI
   ansible.builtin.unarchive:
@@ -179,3 +273,46 @@
     remote_src: true
     mode: "0755"
     creates: /usr/local/bin/vault
+
+- name: Настройка конфигурации WSL
+  ansible.builtin.script:
+    cmd: "{{ role_path }}/files/configure-wsl-conf.py {{ cluster_user }}"
+  register: wsl_conf_result
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
+
+- name: Подсказка о перезапуске WSL
+  ansible.builtin.debug:
+    msg: >-
+      Параметры /etc/wsl.conf обновлены. Чтобы применить настройки, выполните
+      wsl.exe --shutdown в Windows и откройте WSL заново от пользователя {{ cluster_user }}.
+  when:
+    - "'microsoft' in ansible_facts['kernel'] | lower"
+    - "'updated' in (wsl_conf_result.stdout | default(''))"
+
+- name: Проверка прав пользователя cluster на репозиторий
+  ansible.builtin.shell: |
+    status=0
+    sudo --user={{ cluster_user }} test -x "{{ repo_root }}" || status=1
+    sudo --user={{ cluster_user }} test -r "{{ repo_root }}/ansible/cluster.yml" || status=1
+    sudo --user={{ cluster_user }} test -w "{{ repo_root }}/terraform" || status=1
+    sudo --user={{ cluster_user }} test -w "{{ repo_root }}/volumes" || status=1
+    for file in terraform/terraform.tfstate terraform/terraform.tfstate.backup; do
+      if [ -e "{{ repo_root }}/$file" ] && ! sudo --user={{ cluster_user }} test -w "{{ repo_root }}/$file"; then status=1; fi
+    done
+    if [ -d "{{ repo_root }}/terraform/.terraform" ] && ! sudo --user={{ cluster_user }} test -w "{{ repo_root }}/terraform/.terraform"; then status=1; fi
+    exit "$status"
+  args:
+    executable: /bin/bash
+  register: wsl_repo_permissions
+  changed_when: false
+  failed_when: false
+  when: "'microsoft' in ansible_facts['kernel'] | lower"
+
+- name: Ошибка при недостаточных правах на репозиторий
+  ansible.builtin.fail:
+    msg: >-
+      Пользователь {{ cluster_user }} создан, но не имеет нужных прав на репозиторий.
+      Проверьте права WSL-диска с репозиторием и повторите настройку.
+  when:
+    - "'microsoft' in ansible_facts['kernel'] | lower"
+    - wsl_repo_permissions.rc | default(0) != 0

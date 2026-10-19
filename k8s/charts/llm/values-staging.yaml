@@ -1,0 +1,57 @@
+llama:
+  image:
+    repository: ghcr.io/ggml-org/llama.cpp
+    tag: server
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  model:
+    repository: bartowski/Qwen2.5-0.5B-Instruct-GGUF
+    name: Qwen2.5-0.5B-Instruct
+    quantization: Q4_K_M
+    file: ""
+  storage: 30Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 4Gi
+  gpu:
+    enabled: false
+    layers: 99
+    imageTag: server-cuda
+  server:
+    contextSize: 2048
+    noMap: false
+    cacheTypeK: f16
+    cacheTypeV: f16
+    nCpuMoe: 0
+    batchSize: 512
+    ubatchSize: 128
+    flashAttention: auto
+
+webui:
+  image:
+    repository: ghcr.io/open-webui/open-webui
+    tag: main
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+  env:
+    OPENAI_API_BASE_URL: http://llama.llm.svc.cluster.local:8080/v1
+    OPENAI_API_KEY: not-needed
+    ENABLE_OLLAMA_API: "false"
+
+perplexity:
+  enabled: false
+  image: ghcr.io/ggml-org/llama.cpp:full
+  gpuImage: ghcr.io/ggml-org/llama.cpp:full-cuda
+  input: >-
+    The quick brown fox jumps over the lazy dog. Language models predict
+    each token from the preceding context. This short sample can be replaced
+    with a representative text corpus using the Helm values.
+  contextSize: 2048
+  batchSize: 512
+  ubatchSize: 128

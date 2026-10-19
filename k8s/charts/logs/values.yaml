@@ -1,9 +1,0 @@
-exporterEnv:
-  namespaces:
-    db: db
-    mb: mb
-  postgres:
-    DATA_SOURCE_URI: postgresql.db.svc.cluster.local:5432/postgres?sslmode=disable
-    DATA_SOURCE_USER: postgres_exporter
-  redis:
-    REDIS_ADDR: redis://redis.db.svc.cluster.local:6379

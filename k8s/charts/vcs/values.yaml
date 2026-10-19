@@ -1,9 +1,0 @@
-env:
-  registry:
-    REGISTRY_HTTP_ADDR: ":5000"
-    REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
-    REGISTRY_STORAGE_DELETE_ENABLED: "true"
-    REGISTRY_AUTH_TOKEN_REALM: http://gitlab.local/jwt/auth
-    REGISTRY_AUTH_TOKEN_SERVICE: container_registry
-    REGISTRY_AUTH_TOKEN_ISSUER: gitlab-issuer
-    REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /etc/docker/registry/certificate.crt

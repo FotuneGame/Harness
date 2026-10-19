@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-ui-config
+  namespace: {{ .Release.Namespace }}
+data:
+{{- toYaml .Values.env.kafkaUi | nindent 2 }}

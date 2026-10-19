@@ -1,0 +1,67 @@
+---
+- name: Чтение состояния Vault
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - exec
+      - -n
+      - secret
+      - vault-0
+      - --
+      - vault
+      - status
+      - -format=json
+  register: platform_vault_status
+  changed_when: false
+  failed_when: false
+
+- name: Разбор состояния Vault
+  ansible.builtin.set_fact:
+    platform_vault_status_json: "{{ platform_vault_status.stdout | from_json }}"
+  when: platform_vault_status.rc == 0
+
+- name: Проверка готовности Vault
+  ansible.builtin.fail:
+    msg: |
+      Базовые charts платформы установлены, но Vault не инициализирован и не разблокирован.
+      Инициализируйте и разблокируйте Vault операцией 2:
+      ansible-playbook -i ansible/inventory.ini ansible/cluster.yml -e cluster_action=2
+      Затем добавьте секреты в Vault и повторите эту операцию.
+  when: >-
+    platform_vault_status.rc != 0 or
+    not (platform_vault_status_json.initialized | default(false) | bool) or
+    (platform_vault_status_json.sealed | default(true) | bool)
+
+- name: Проверка синхронизации Vault-секретов
+  ansible.builtin.shell: |
+    missing=""
+    for entry in $PLATFORM_SECRETS; do
+      namespace=${entry%%/*}
+      name=${entry##*/}
+      kubectl get secret "$name" -n "$namespace" >/dev/null 2>&1 || missing="$missing $entry"
+    done
+    if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+    exit 0
+  args:
+    executable: /bin/bash
+  environment:
+    PLATFORM_SECRETS: "{{ platform_required_secrets | map(attribute='namespace') | zip(platform_required_secrets | map(attribute='name')) | map('join', '/') | join(' ') }}"
+  register: platform_secrets_status
+  until: platform_secrets_status.rc == 0
+  retries: 60
+  delay: 5
+  changed_when: false
+  failed_when: false
+
+- name: Отметка отсутствующих Vault-секретов
+  ansible.builtin.set_fact:
+    platform_secrets_missing: "{{ platform_secrets_status.rc != 0 }}"
+
+- name: Вывод отсутствующих Vault-секретов
+  ansible.builtin.debug:
+    msg: "{{ platform_secrets_status.stdout_lines | default([]) }}"
+  when: platform_secrets_missing | bool
+
+- name: Развёртывание сервисов при наличии секретов
+  ansible.builtin.include_tasks: services.yml
+  when: not (platform_secrets_missing | bool)

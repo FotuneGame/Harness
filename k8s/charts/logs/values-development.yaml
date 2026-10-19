@@ -1,7 +1,0 @@
-prometheus:
-  prometheusSpec:
-    retention: 7d
-    resources:
-      requests:
-        cpu: 200m
-        memory: 1Gi

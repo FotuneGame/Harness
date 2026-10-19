@@ -1,0 +1,62 @@
+{{- if .Values.perplexity.enabled }}
+{{- $modelFile := default (printf "%s-%s.gguf" .Values.llama.model.name .Values.llama.model.quantization) .Values.llama.model.file }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llama-perplexity
+  namespace: {{ .Release.Namespace }}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        platform.node: llm
+      initContainers:
+        - name: wait-for-model
+          image: curlimages/curl:8.12.1
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              until [ -s "/models/{{ $modelFile }}" ]; do
+                sleep 5
+              done
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+      containers:
+        - name: perplexity
+          image: {{ if .Values.llama.gpu.enabled }}{{ .Values.perplexity.gpuImage | quote }}{{ else }}{{ .Values.perplexity.image | quote }}{{ end }}
+          args:
+            - --perplexity
+            - -m
+            - "/models/{{ $modelFile }}"
+            - -f
+            - /test/input.txt
+            - -c
+            - {{ .Values.perplexity.contextSize | quote }}
+            - -b
+            - {{ .Values.perplexity.batchSize | quote }}
+            - -ub
+            - {{ .Values.perplexity.ubatchSize | quote }}
+          {{ if .Values.llama.gpu.enabled }}
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          {{ end }}
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+            - name: test-input
+              mountPath: /test
+              readOnly: true
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-llama-0
+        - name: test-input
+          configMap:
+            name: llama-perplexity-input
+{{- end }}

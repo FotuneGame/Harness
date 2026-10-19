@@ -1,0 +1,186 @@
+exporterEnv:
+  namespaces:
+    db: db
+    mb: mb
+  postgres:
+    DATA_SOURCE_URI: postgresql.db.svc.cluster.local:5432/postgres?sslmode=disable
+    DATA_SOURCE_USER: postgres_exporter
+  redis:
+    REDIS_ADDR: redis://redis.db.svc.cluster.local:6379
+
+# kube-prometheus-stack устанавливается как зависимость chart (Chart.yaml).
+kube-prometheus-stack:
+  enabled: true
+  # Имена ресурсов: logs-prometheus, logs-alertmanager, logs-operator.
+  fullnameOverride: logs
+  crds:
+    enabled: true
+  alertmanager:
+    enabled: true
+    config:
+      global:
+        resolve_timeout: 5m
+        smtp_smarthost: smtp.example.com:587
+        smtp_from: infra-alerts@example.com
+        smtp_hello: devops.local
+        smtp_require_tls: true
+      route:
+        group_by: [alertname, namespace]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        receiver: email
+      receivers:
+        - name: email
+          email_configs:
+            - to: infra-alerts@example.com
+              send_resolved: true
+              auth_username: infra-alerts@example.com
+              auth_password_file: /etc/alertmanager/secrets/smtp-credentials/password
+    alertmanagerSpec:
+      nodeSelector:
+        platform.node: core
+      secrets:
+        - smtp-credentials
+      storage:
+        volumeClaimTemplate:
+          spec:
+            volumeName: pv-logs-alertmanager
+            storageClassName: local
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 1Gi
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+  grafana:
+    enabled: true
+    fullnameOverride: logs-grafana
+    nodeSelector:
+      platform.node: core
+    persistence:
+      enabled: true
+      type: pvc
+      storageClassName: local
+      volumeName: pv-logs-grafana
+      lookupVolumeName: false
+      accessModes:
+        - ReadWriteOnce
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    ingress:
+      enabled: false
+    defaultDashboardsEnabled: true
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+  prometheus:
+    ingress:
+      enabled: false
+    prometheusSpec:
+      nodeSelector:
+        platform.node: core
+      retention: 7d
+      serviceMonitorSelectorNilUsesHelmValues: false
+      serviceMonitorNamespaceSelector: {}
+      podMonitorSelectorNilUsesHelmValues: false
+      podMonitorNamespaceSelector: {}
+      resources:
+        requests:
+          cpu: 200m
+          memory: 1Gi
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: local
+            volumeName: pv-logs-prometheus
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Gi
+  prometheusOperator:
+    nodeSelector:
+      platform.node: core
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  # DaemonSet: собирает метрики со всех узлов, включая узел приложений.
+  prometheus-node-exporter:
+    fullnameOverride: logs-prometheus-node-exporter
+    tolerations:
+      - operator: Exists
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+  kube-state-metrics:
+    fullnameOverride: logs-kube-state-metrics
+    nodeSelector:
+      platform.node: core
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+# Jaeger устанавливается как зависимость chart (Chart.yaml).
+jaeger:
+  enabled: true
+  # fullnameOverride родительского chart не должен влиять на Jaeger.
+  fullnameOverride: jaeger
+  nodeSelector:
+    platform.node: core
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  service:
+    extraPorts:
+      - name: otlp-grpc
+        port: 4317
+        targetPort: 4317
+        protocol: TCP
+      - name: otlp-http
+        port: 4318
+        targetPort: 4318
+        protocol: TCP
+  ingress:
+    enabled: false
+  userconfig:
+    service:
+      extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          exporters: [jaeger_storage_exporter]
+    extensions:
+      healthcheckv2:
+        use_v2: true
+        http:
+          endpoint: 0.0.0.0:13133
+      jaeger_query:
+        storage:
+          traces: local
+      jaeger_storage:
+        backends:
+          local:
+            memory:
+              max_traces: 50000
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    exporters:
+      jaeger_storage_exporter:
+        trace_storage: local

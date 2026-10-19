@@ -1,0 +1,22 @@
+---
+repo_root: "{{ playbook_dir }}/.."
+terraform_version: "1.9.8"
+vault_version: "1.18.5"
+minikube_version: "v1.34.0"
+install_docker: true
+cluster_user: cluster
+docker_user: "{{ cluster_user if 'microsoft' in (ansible_facts['kernel'] | lower) else (lookup('env', 'SUDO_USER') | default(lookup('env', 'USER'), true)) }}"
+base_packages:
+  - curl
+  - git
+  - unzip
+  - tar
+  - ca-certificates
+  - openssl
+  - gnupg
+  - conntrack
+  - socat
+  - jq
+  - python3
+  - python3-pip
+  - sudo

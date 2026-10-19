@@ -1,0 +1,75 @@
+---
+# Профиль значений Helm (dev, staging, prod) выбирается переменной HELM_ENV.
+platform_helm_env: "{{ lookup('env', 'HELM_ENV') | default('dev', true) }}"
+
+# true — установить только базовые charts и Vault (операция 1, первый проход).
+platform_bootstrap_only: false
+
+# Узел LLM: на нём проверяется метка platform.gpu и размещаются сервисы LLM.
+platform_llm_node: minikube-m02
+
+# Helm-репозитории upstream charts.
+# Репозиторий helm.releases.hashicorp.com недоступен, поэтому charts Vault и
+# Vault Secrets Operator зафиксированы в репозитории (platform_vendored_secret_charts).
+platform_helm_repositories:
+  - name: ingress-nginx
+    url: https://kubernetes.github.io/ingress-nginx
+  - name: gitlab
+    url: https://charts.gitlab.io
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: jaegertracing
+    url: https://jaegertracing.github.io/helm-charts
+  - name: k8up
+    url: https://k8up-io.github.io/k8up
+  - name: nvidia-device-plugin
+    url: https://nvidia.github.io/k8s-device-plugin
+  - name: argo
+    url: https://argoproj.github.io/argo-helm
+
+# Charts платформы, зависимости которых скачиваются в charts/ рядом с Chart.yaml.
+platform_chart_dependencies:
+  - logs
+  - backup
+  - proxy
+  - gpu
+  - vcs
+  - cicd
+
+# Архивы зависимостей chart secret, лежащие в репозитории.
+platform_vendored_secret_charts:
+  - vault-0.34.1.tgz
+  - vault-secrets-operator-1.6.0.tgz
+
+# Секреты, которые Vault Secrets Operator синхронизирует в namespace.
+platform_required_secrets:
+  - namespace: db
+    name: postgres-secret
+  - namespace: db
+    name: postgres-app-credentials
+  - namespace: db
+    name: pgadmin-secret
+  - namespace: db
+    name: redis-secret
+  - namespace: db
+    name: clickhouse-secret
+  - namespace: vcs
+    name: gitlab-postgresql-password
+  - namespace: vcs
+    name: gitlab-object-storage
+  - namespace: vcs
+    name: gitlab-gitlab-initial-root-password
+  - namespace: acl
+    name: keycloak-secret
+  - namespace: backup
+    name: minio-secret
+  - namespace: backup
+    name: k8up-s3
+  - namespace: backup
+    name: k8up-restic
+  - namespace: logs
+    name: smtp-credentials
+  - namespace: cicd
+    name: gitlab-runner-secret
+  - namespace: cicd
+    name: argocd-gitlab-repository
