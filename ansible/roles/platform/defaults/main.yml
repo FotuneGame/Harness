@@ -1,87 +1,56 @@
 ---
-# Профиль значений Helm (dev, staging, prod) выбирается переменной HELM_ENV.
-platform_helm_env: "{{ lookup('env', 'HELM_ENV') | default('dev', true) }}"
+platform_repo: "{{ playbook_dir | dirname }}"
+platform_charts: "{{ platform_repo }}/k8s"
+# Параметры кластера из Terraform (output ansible): профиль, доли VRAM.
+platform_context: "{{ platform_tf.profile }}"
+platform_is_wsl: "{{ 'microsoft' in ansible_facts.kernel | lower }}"
 
-# true — установить только базовые charts и Vault (операция 1, первый проход).
-platform_bootstrap_only: false
+# Окружение Helm: dev, stage или prod (./cluster.sh up <env>).
+platform_env: dev
 
-# Узел LLM: на нём проверяется метка platform.gpu и размещаются сервисы LLM.
-platform_llm_node: minikube-m02
+# Сервисы в порядке установки (foundation, secret и proxy ставятся раньше).
+# Namespace совпадает с именем chart; релиз gitlab задаёт имена ресурсов GitLab.
+platform_releases:
+  - { name: platform-db, chart: db }
+  - { name: platform-mb, chart: mb }
+  - { name: platform-acl, chart: acl }
+  - { name: platform-backup, chart: backup }
+  - name: platform-llm
+    chart: llm
+    args: [--set, "llama.gpu.enabled={{ platform_gpu | string | lower }}", --set, "llama.gpu.memoryMiB={{ platform_llms_vram }}"]
+  - { name: platform-logs, chart: logs }
+  - { name: gitlab, chart: vcs }
+  - { name: platform-cicd, chart: cicd, args: [--set, "gitlab-runner.enabled={{ platform_runner | string | lower }}"] }
+  # После cicd: политика монтирования папок использует CRD Kyverno.
+  - { name: platform-app, chart: app }
 
-# Helm-репозитории upstream charts.
-# Charts Bitnami публикуются только в OCI-реестре Docker Hub, поэтому
-# `helm repo add` для них не нужен (см. k8s/charts/*/Chart.yaml).
-# Репозиторий helm.releases.hashicorp.com недоступен, поэтому charts Vault и
-# Vault Secrets Operator зафиксированы в репозитории (platform_vendored_secret_charts).
-platform_helm_repositories:
-  - name: ingress-nginx
-    url: https://kubernetes.github.io/ingress-nginx
-  - name: gitlab
-    url: https://charts.gitlab.io
-  - name: prometheus-community
-    url: https://prometheus-community.github.io/helm-charts
-  - name: jaegertracing
-    url: https://jaegertracing.github.io/helm-charts
-  - name: k8up
-    url: https://k8up-io.github.io/k8up
-  - name: nvidia-device-plugin
-    url: https://nvidia.github.io/k8s-device-plugin
-  - name: argo
-    url: https://argoproj.github.io/argo-helm
-  - name: minio
-    url: https://charts.min.io/
-  - name: runix
-    url: https://helm.runix.net
-  - name: open-webui
-    url: https://open-webui.github.io/helm-charts
-
-# Charts платформы, зависимости которых скачиваются в charts/ рядом с Chart.yaml.
-platform_chart_dependencies:
-  - db
-  - mb
-  - acl
-  - llm
-  - logs
-  - backup
-  - proxy
-  - gpu
-  - vcs
-  - cicd
-
-# Архивы зависимостей chart secret, лежащие в репозитории.
-platform_vendored_secret_charts:
-  - vault-0.34.1.tgz
-  - vault-secrets-operator-1.6.0.tgz
+platform_proxy_values: "{{ lookup('file', platform_charts + '/proxy/values.yaml') | from_yaml }}"
+platform_tls_dir: "{{ platform_repo }}/volumes/proxy/tls"
+platform_tls_namespaces: "{{ (platform_proxy_values.routes | map(attribute='namespace') | list + ['vcs']) | unique }}"
 
 # Секреты, которые Vault Secrets Operator синхронизирует в namespace.
-platform_required_secrets:
-  - namespace: db
-    name: postgres-secret
-  - namespace: db
-    name: postgres-app-credentials
-  - namespace: db
-    name: pgadmin-secret
-  - namespace: db
-    name: redis-secret
-  - namespace: db
-    name: clickhouse-secret
-  - namespace: vcs
-    name: gitlab-postgresql-password
-  - namespace: vcs
-    name: gitlab-object-storage
-  - namespace: vcs
-    name: gitlab-gitlab-initial-root-password
-  - namespace: acl
-    name: keycloak-secret
-  - namespace: backup
-    name: minio-secret
-  - namespace: backup
-    name: k8up-s3
-  - namespace: backup
-    name: k8up-restic
-  - namespace: logs
-    name: smtp-credentials
-  - namespace: cicd
-    name: gitlab-runner-secret
-  - namespace: cicd
-    name: argocd-gitlab-repository
+platform_vault_secrets: "{{ (lookup('file', platform_charts + '/secret/values.yaml') | from_yaml).secrets }}"
+# "namespace/имя" обязательных Secret через пробел.
+platform_required_secrets: >-
+  {% for namespace, secrets in platform_vault_secrets.items() -%}
+  {% for name, secret in secrets.items() if not secret.optional | default(false) -%}
+  {{ namespace }}/{{ name }} {% endfor %}{% endfor %}
+
+# Значения секретов, которые записываются в Vault при его инициализации;
+# null — случайный пароль из 32 символов. Пути — из k8s/secret/values.yaml.
+platform_vault_seed:
+  db/postgresql: { password: null }
+  db/gitlab: { password: null }
+  db/keycloak: { password: null }
+  db/postgres-exporter: { password: null }
+  db/pgadmin: { password: null }
+  db/redis: { password: null }
+  db/clickhouse: { password: null }
+  vcs/gitlab-root: { password: null }
+  acl/keycloak: { password: null }
+  backup/minio: { rootUser: admin, rootPassword: null }
+  backup/minio-gitlab: { secretKey: null }
+  backup/minio-k8up: { secretKey: null }
+  backup/restic: { password: null }
+  logs/grafana: { admin-user: admin, admin-password: null }
+  logs/smtp: { password: change-me }

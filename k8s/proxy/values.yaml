@@ -1,0 +1,65 @@
+# Маршруты HTTPS: host -> Service в namespace. По этому же списку Ansible
+# прописывает имена в hosts и выпускает TLS-сертификат.
+routes:
+  - { host: pg.local, namespace: db, service: pgadmin, port: 80 }
+  - { host: redis.local, namespace: db, service: redisinsight, port: 5540 }
+  - { host: clickhouse.local, namespace: db, service: clickhouse, port: 8123 }
+  - { host: kafka.local, namespace: mb, service: kafka-ui, port: 80 }
+  - { host: llama.local, namespace: llm, service: open-webui, port: 8080 }
+  - { host: keycloak.local, namespace: acl, service: keycloak, port: 8080 }
+  - { host: vault.local, namespace: secret, service: vault, port: 8200 }
+  - { host: grafana.local, namespace: logs, service: logs-grafana, port: 80 }
+  - { host: prometheus.local, namespace: logs, service: logs-prometheus, port: 9090 }
+  - { host: alert.local, namespace: logs, service: logs-alertmanager, port: 9093 }
+  - { host: jaeger.local, namespace: logs, service: jaeger, port: 16686 }
+  - { host: argocd.local, namespace: cicd, service: argocd-server, port: 80 }
+  - host: registry.local
+    namespace: vcs
+    service: registry
+    port: 5000
+    # Образы большие: без ограничения размера и буферизации.
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "900"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+
+# Ingress, который создаёт chart GitLab (k8s/vcs).
+extraHosts: [gitlab.local]
+
+# Аннотации маршрутов без собственных annotations: ограничение частоты запросов.
+annotations:
+  nginx.ingress.kubernetes.io/limit-rps: "20"
+  nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+  nginx.ingress.kubernetes.io/limit-connections: "30"
+  nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+
+# Secret с сертификатом *.local создаёт Ansible в каждом namespace маршрутов и vcs.
+tlsSecret: local-wildcard-tls
+
+# Service ingress-nginx-controller (80/443), снаружи доступен через
+# ./cluster.sh ports open.
+ingress-nginx:
+  fullnameOverride: ingress-nginx
+  controller:
+    nodeSelector:
+      platform.node: core
+    replicaCount: 1
+    image:
+      digest: ""
+    service:
+      type: ClusterIP
+    ingressClassResource:
+      name: nginx
+      default: false
+    config:
+      ssl-redirect: "true"
+      use-forwarded-headers: "false"
+      proxy-body-size: "100m"
+      limit-req-status-code: "429"
+      limit-conn-status-code: "429"
+      client-header-timeout: "10"
+      client-body-timeout: "30"
+      keep-alive: "30"
+    metrics:
+      enabled: true

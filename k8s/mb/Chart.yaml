@@ -1,0 +1,15 @@
+apiVersion: v2
+name: mb
+description: Kafka и Kafka UI
+type: application
+version: 0.2.0
+dependencies:
+  # Charts Bitnami публикуются только в OCI-реестре Docker Hub.
+  - name: kafka
+    version: 32.4.3
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: kafka.enabled
+  - name: kafka-ui
+    version: 1.6.5
+    repository: https://kafbat.github.io/helm-charts
+    condition: kafka-ui.enabled

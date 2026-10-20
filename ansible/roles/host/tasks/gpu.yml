@@ -1,0 +1,56 @@
+---
+# NVIDIA Container Toolkit, если в Ubuntu установлен драйвер NVIDIA.
+# В WSL2 GPU предоставляет Docker Desktop.
+- name: Поиск драйвера NVIDIA
+  ansible.builtin.command: nvidia-smi -L
+  changed_when: false
+  failed_when: false
+  register: host_nvidia
+
+- name: NVIDIA Container Toolkit
+  when: host_nvidia.rc == 0
+  become: true
+  block:
+    - name: Ключ репозитория NVIDIA
+      ansible.builtin.get_url:
+        url: https://nvidia.github.io/libnvidia-container/gpgkey
+        dest: /etc/apt/keyrings/nvidia-container-toolkit.asc
+        mode: "0644"
+
+    - name: Репозиторий NVIDIA
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+        content: >
+          deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.asc]
+          https://nvidia.github.io/libnvidia-container/stable/deb/$(ARCH) /
+        mode: "0644"
+
+    - name: Установка NVIDIA Container Toolkit
+      ansible.builtin.apt:
+        name: nvidia-container-toolkit
+        update_cache: true
+
+    - name: Runtime NVIDIA в Docker
+      ansible.builtin.shell: |
+        docker info --format '{{ "{{" }}json .Runtimes{{ "}}" }}' | grep -q nvidia && exit 0
+        nvidia-ctk runtime configure --runtime=docker && echo configured
+      register: host_nvidia_runtime
+      changed_when: "'configured' in host_nvidia_runtime.stdout"
+
+    - name: Перезапуск Docker
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+      when: host_nvidia_runtime is changed
+
+    # Требование minikube для --gpus с драйвером docker.
+    - name: net.core.bpf_jit_harden=0
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-minikube-gpu.conf
+        content: "net.core.bpf_jit_harden = 0\n"
+        mode: "0644"
+      register: host_bpf_sysctl
+
+    - name: Применение sysctl
+      ansible.builtin.command: sysctl --load=/etc/sysctl.d/99-minikube-gpu.conf
+      when: host_bpf_sysctl is changed

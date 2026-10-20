@@ -1,0 +1,57 @@
+---
+# Права файлов на дисках Windows (chmod для ключей, данных БД в volumes/).
+- name: Опция metadata для дисков Windows
+  become: true
+  community.general.ini_file:
+    path: /etc/wsl.conf
+    section: automount
+    option: options
+    value: metadata
+    mode: "0644"
+  register: host_wsl_conf
+
+- name: Профиль пользователя Windows
+  ansible.builtin.shell: wslpath -u "$(powershell.exe -NoProfile -Command '$env:USERPROFILE' | tr -d '\r')"
+  changed_when: false
+  register: host_windows_profile
+
+- name: Память виртуальной машины WSL2
+  community.general.ini_file:
+    path: "{{ host_windows_profile.stdout }}/.wslconfig"
+    section: wsl2
+    option: memory
+    value: "{{ host_tf.wsl_memory_gib }}GB"
+    no_extra_spaces: true
+  register: host_wslconfig
+
+- name: Опции диска с репозиторием
+  ansible.builtin.command: findmnt --noheadings --output FSTYPE,OPTIONS --target {{ host_repo }}
+  changed_when: false
+  register: host_repo_mount
+
+- name: Требуется перезапуск WSL
+  ansible.builtin.set_fact:
+    host_restart: "{{ host_restart + ['wsl.exe --shutdown в Windows и откройте WSL заново'] }}"
+  when: >-
+    host_wsl_conf is changed or host_wslconfig is changed or
+    (host_repo_mount.stdout is match('(9p|drvfs)') and 'metadata' not in host_repo_mount.stdout)
+
+- name: Путь к скрипту hosts Windows
+  ansible.builtin.command: wslpath -w {{ role_path }}/files/windows-hosts.ps1
+  changed_when: false
+  register: host_windows_script
+
+# Браузер в Windows разрешает *.local через hosts Windows (запросит UAC).
+- name: Имена *.local в hosts Windows
+  ansible.builtin.command:
+    argv:
+      - powershell.exe
+      - -NoProfile
+      - -ExecutionPolicy
+      - Bypass
+      - -File
+      - "{{ host_windows_script.stdout }}"
+      - -Names
+      - "{{ host_hostnames | join(',') }}"
+  register: host_windows_hosts
+  changed_when: "'updated' in host_windows_hosts.stdout"

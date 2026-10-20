@@ -1,0 +1,47 @@
+---
+host_repo: "{{ playbook_dir | dirname }}"
+host_is_wsl: "{{ 'microsoft' in ansible_facts.kernel | lower }}"
+
+# Параметры железа и кластера (память WSL, версия Kubernetes, путь ключа etcd)
+# задаёт только Terraform: роль читает их в host_tf (terraform/main.tf, local.ansible).
+
+host_packages:
+  - ca-certificates
+  - conntrack
+  - curl
+  - gnupg
+  - jq
+  - libcap2-bin
+  - openssl
+  - socat
+  - tar
+  - unzip
+
+# CLI с проверкой контрольных сумм. kubectl — версии kubernetes_version из Terraform.
+host_binaries:
+  - url: https://storage.googleapis.com/minikube/releases/v1.34.0/minikube-linux-amd64
+    checksum: sha256:https://storage.googleapis.com/minikube/releases/v1.34.0/minikube-linux-amd64.sha256
+    dest: /usr/local/bin/minikube
+  - url: "https://dl.k8s.io/release/{{ host_tf.kubernetes_version }}/bin/linux/amd64/kubectl"
+    checksum: "sha256:https://dl.k8s.io/release/{{ host_tf.kubernetes_version }}/bin/linux/amd64/kubectl.sha256"
+    dest: /usr/local/bin/kubectl
+host_archives:
+  - url: https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz
+    checksum: sha256:https://get.helm.sh/helm-v3.17.3-linux-amd64.tar.gz.sha256sum
+    binary: linux-amd64/helm
+  - url: https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
+    checksum: sha256:https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_SHA256SUMS
+    binary: terraform
+host_archives_dir: /opt/platform-tools
+
+# Ключ шифрования Secret в etcd: хранится в volumes/ (исключён из Git) и
+# копируется в ~/.minikube/files, откуда minikube переносит его в узлы.
+host_encryption_config: "{{ host_repo }}/volumes/minikube/encryption/encryption-config.yaml"
+host_encryption_node_path: "{{ host_tf.encryption_config }}"
+
+# Локальный CA (только для имён *.local) и сертификат ingress.
+host_tls_dir: "{{ host_repo }}/volumes/proxy/tls"
+
+# Имена *.local: маршруты ingress из k8s/proxy/values.yaml.
+host_proxy_values: "{{ lookup('file', host_repo + '/k8s/proxy/values.yaml') | from_yaml }}"
+host_hostnames: "{{ host_proxy_values.routes | map(attribute='host') | list + host_proxy_values.extraHosts }}"

@@ -1,0 +1,38 @@
+# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
+# разрешает образы вне bitnami/.
+global:
+  security:
+    allowInsecureImages: true
+
+# Service keycloak:8080, StatefulSet keycloak.
+keycloak:
+  fullnameOverride: keycloak
+  image:
+    repository: bitnamilegacy/keycloak
+  service:
+    ports:
+      http: 8080
+  # TLS завершается на ingress, Keycloak работает по HTTP.
+  proxyHeaders: xforwarded
+  production: false
+  usePasswordFiles: false
+  auth:
+    adminUser: admin
+    existingSecret: keycloak-credentials
+    passwordSecretKey: password
+  # База — PostgreSQL из namespace db.
+  postgresql:
+    enabled: false
+  externalDatabase:
+    host: postgresql.db.svc.cluster.local
+    port: 5432
+    user: keycloak
+    database: keycloak
+    existingSecret: keycloak-db-credentials
+    existingSecretPasswordKey: password
+  nodeSelector:
+    platform.node: core
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi

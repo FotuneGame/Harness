@@ -1,18 +1,21 @@
+# Terraform
 terraform/.terraform/
+terraform/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 terraform/*.tfplan
 terraform/terraform.tfvars
-terraform/backend.hcl
-terraform/crash.log
-terraform/crash.*.log
-k8s/charts/*/charts/*
-# Chart Vault и Vault Secrets Operator: репозиторий helm.releases.hashicorp.com
-# недоступен, поэтому архивы лежат в репозитории.
-!k8s/charts/secret/charts/*.tgz
-**/__pycache__/
-*.py[cod]
+terraform/crash*.log
+
+# Зависимости Helm скачиваются в charts/. Исключение — Vault и Vault Secrets
+# Operator: репозиторий helm.releases.hashicorp.com недоступен.
+k8s/*/charts/*
+!k8s/secret/charts/*.tgz
+
+# Данные сервисов, ключи и сертификаты.
 volumes/*
 volumes/**/*
 !volumes/**/
 !volumes/**/.gitkeep
+
+**/__pycache__/

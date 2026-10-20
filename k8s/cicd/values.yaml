@@ -1,0 +1,56 @@
+# Приложения из Argo CD разворачиваются в namespace app (узел apps).
+# Доступ к GitLab: Secret argocd-gitlab-repository (Vault cicd/argocd-gitlab).
+argo-cd:
+  fullnameOverride: argocd
+  global:
+    domain: argocd.local
+    nodeSelector:
+      platform.node: core
+  configs:
+    cm:
+      url: https://argocd.local
+  server:
+    # TLS завершается на ingress.
+    insecure: true
+
+# Kyverno применяет политики к подам приложений (k8s/app): монтирует папку
+# volumes/app/<приложение>. Нужен только admission controller.
+kyverno:
+  global:
+    nodeSelector:
+      platform.node: core
+  admissionController:
+    container:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+  backgroundController:
+    enabled: false
+  cleanupController:
+    enabled: false
+  reportsController:
+    enabled: false
+
+# Включается Ansible, если в Vault есть cicd/gitlab-runner.
+gitlab-runner:
+  nodeSelector:
+    platform.node: core
+  gitlabUrl: http://gitlab-webservice-default.vcs.svc.cluster.local:8181
+  rbac:
+    create: true
+  runners:
+    secret: gitlab-runner-credentials
+    config: |
+      [[runners]]
+        clone_url = "http://gitlab-webservice-default.vcs.svc.cluster.local:8181"
+        [runners.kubernetes]
+          namespace = "cicd"
+          image = "alpine:latest"
+          privileged = false
+          cpu_limit = "{{ .Values.jobLimits.cpu }}"
+          memory_limit = "{{ .Values.jobLimits.memory }}"
+  # Лимиты job-подов (подставляются в runners.config).
+  jobLimits:
+    cpu: "1"
+    memory: 1Gi

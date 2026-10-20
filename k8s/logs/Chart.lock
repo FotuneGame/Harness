@@ -1,0 +1,18 @@
+dependencies:
+- name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 92.9.0
+- name: jaeger
+  repository: https://jaegertracing.github.io/helm-charts
+  version: 4.16.1
+- name: prometheus-postgres-exporter
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 8.2.0
+- name: prometheus-redis-exporter
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 6.34.0
+- name: prometheus-kafka-exporter
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 4.0.0
+digest: sha256:0b0857016eaf93629943eb052f843b1d1f46aa8eb56a8bdd0e3034437b6068df
+generated: "2026-10-20T15:09:33.892825382+03:00"

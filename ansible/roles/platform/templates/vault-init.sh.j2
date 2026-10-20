@@ -1,0 +1,42 @@
+#!/bin/sh
+# Выполняется внутри pod vault-0; секреты передаются через stdin, а не аргументы.
+set -eu
+
+{% for key in platform_vault_keys[:3] %}
+vault operator unseal '{{ key }}' >/dev/null
+{% endfor %}
+export VAULT_TOKEN='{{ platform_vault_root }}'
+
+vault auth enable kubernetes
+vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc
+vault secrets enable -path=kv kv-v2
+
+# Роль Vault Secrets Operator на каждый namespace: чтение только своих путей.
+{% for namespace, secrets in platform_vault_secrets.items() %}
+vault policy write platform-{{ namespace }} - <<'EOF'
+{% for path in secrets.values() | map(attribute='path') | unique %}
+path "kv/data/{{ path }}" { capabilities = ["read"] }
+{% endfor %}
+EOF
+vault write auth/kubernetes/role/platform-{{ namespace }} \
+  bound_service_account_names=default \
+  bound_service_account_namespaces={{ namespace }} \
+  policies=platform-{{ namespace }} ttl=1h
+{% endfor %}
+
+# Пользователь admin (UI и CLI): управление секретами kv.
+vault policy write operator - <<'EOF'
+path "kv/data/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+path "kv/metadata/*" { capabilities = ["read", "list", "delete"] }
+EOF
+vault auth enable userpass
+printf '%s' '{{ platform_vault_admin_password }}' | vault write auth/userpass/users/admin password=- policies=operator
+
+# Начальные значения секретов.
+{% for path, keys in platform_vault_seed.items() %}
+vault kv put -mount=kv {{ path }} - >/dev/null <<'EOF'
+{ {% for key, value in keys.items() %}{{ key | to_json }}: {{ (value if value is not none else lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits')) | to_json }}{{ ', ' if not loop.last }}{% endfor %} }
+EOF
+{% endfor %}
+
+vault token revoke -self >/dev/null

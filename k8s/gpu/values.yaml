@@ -1,0 +1,32 @@
+# HAMi делит одну видеокарту между узлами и подами: поды запрашивают
+# nvidia.com/gpu: 1 и nvidia.com/gpumem (МиБ), HAMi ограничивает им VRAM.
+# Доли узлов задаются в terraform/variables.tf (nodes.*.vram_mib); Ansible
+# передаёт их в hami.devicePlugin.nodeConfiguration.config.
+hami:
+  fullnameOverride: hami
+  scheduler:
+    nodeSelector:
+      platform.node: core
+    kubeScheduler:
+      image:
+        registry: registry.k8s.io
+        repository: kube-scheduler
+    service:
+      type: ClusterIP
+    # Сертификат webhook: официальный образ (тот же, что у ingress-nginx)
+    # вместо образа из личного репозитория Docker Hub.
+    patch:
+      imageNew:
+        registry: registry.k8s.io
+        repository: ingress-nginx/kube-webhook-certgen
+        tag: v1.6.9
+      nodeSelector:
+        platform.node: core
+  devicePlugin:
+    # Только узлы с выделенной VRAM (метку platform.gpu=on ставит Terraform).
+    nvidiaNodeSelector:
+      platform.gpu: "on"
+    tolerations:
+      - operator: Exists
+    service:
+      type: ClusterIP

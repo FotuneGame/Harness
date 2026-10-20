@@ -1,0 +1,108 @@
+---
+- name: Ключ шифрования Secret в etcd
+  ansible.builtin.shell: |
+    set -eu
+    umask 077
+    mkdir -p "$(dirname "$CONFIG")"
+    cat > "$CONFIG" <<EOF
+    apiVersion: apiserver.config.k8s.io/v1
+    kind: EncryptionConfiguration
+    resources:
+      - resources: [secrets]
+        providers:
+          - aescbc:
+              keys:
+                - name: key1
+                  secret: $(openssl rand -base64 32)
+          - identity: {}
+    EOF
+  args:
+    executable: /bin/bash
+    creates: "{{ host_encryption_config }}"
+  environment:
+    CONFIG: "{{ host_encryption_config }}"
+
+- name: Каталог файлов minikube
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.minikube/files{{ host_encryption_node_path | dirname }}"
+    state: directory
+    mode: "0700"
+
+- name: Ключ шифрования для узлов minikube
+  ansible.builtin.copy:
+    src: "{{ host_encryption_config }}"
+    dest: "{{ ansible_env.HOME }}/.minikube/files{{ host_encryption_node_path }}"
+    mode: "0600"
+
+- name: Каталог TLS
+  ansible.builtin.file:
+    path: "{{ host_tls_dir }}"
+    state: directory
+    mode: "0700"
+
+# CA ограничен именами *.local (nameConstraints): добавьте ca.crt в доверенные.
+- name: Локальный CA
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -newkey
+      - rsa:2048
+      - -nodes
+      - -days
+      - "3650"
+      - -subj
+      - /CN=Local platform CA
+      - -addext
+      - keyUsage=critical,keyCertSign,cRLSign
+      - -addext
+      - nameConstraints=critical,permitted;DNS:local
+      - -keyout
+      - ca.key
+      - -out
+      - ca.crt
+    chdir: "{{ host_tls_dir }}"
+    creates: "{{ host_tls_dir }}/ca.crt"
+
+- name: Проверка сертификата ingress (CA, срок, имена)
+  ansible.builtin.shell: |
+    openssl verify -CAfile ca.crt tls.crt >/dev/null 2>&1 || exit 1
+    openssl x509 -in tls.crt -noout -checkend 2592000 >/dev/null || exit 1
+    for host in {{ host_hostnames | join(' ') }}; do
+      openssl x509 -in tls.crt -noout -checkhost "$host" | grep -q "does match" || exit 1
+    done
+  args:
+    chdir: "{{ host_tls_dir }}"
+  changed_when: false
+  failed_when: false
+  register: host_tls_check
+
+- name: Выпуск сертификата ingress
+  ansible.builtin.shell: |
+    set -eu
+    printf '%s\n' basicConstraints=CA:FALSE keyUsage=critical,digitalSignature,keyEncipherment \
+      extendedKeyUsage=serverAuth "subjectAltName=$SAN" > tls.ext
+    openssl req -newkey rsa:2048 -nodes -subj /CN=platform.local -keyout tls.key -out tls.csr
+    openssl x509 -req -in tls.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 825 \
+      -extfile tls.ext -out tls.crt
+    rm -f tls.csr tls.ext
+  args:
+    chdir: "{{ host_tls_dir }}"
+  environment:
+    SAN: "{{ host_hostnames | map('regex_replace', '^', 'DNS:') | join(',') }}"
+  when: host_tls_check.rc != 0
+
+- name: Права на закрытые ключи
+  ansible.builtin.file:
+    path: "{{ host_tls_dir }}/{{ item }}"
+    mode: "0600"
+  loop: [ca.key, tls.key]
+
+- name: Имена *.local в /etc/hosts
+  become: true
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} platform"
+    insertbefore: BOF
+    block: "127.0.0.1 {{ host_hostnames | join(' ') }}"

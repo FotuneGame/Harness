@@ -1,0 +1,3 @@
+# Репозиторий используется из WSL/Linux: всегда LF.
+* text=auto eol=lf
+*.tgz binary

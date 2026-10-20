@@ -1,0 +1,45 @@
+namespaces:
+  - proxy
+  - vcs
+  - cicd
+  - db
+  - mb
+  - llm
+  - secret
+  - acl
+  - backup
+  - logs
+
+# Namespace приложений из Argo CD: поды автоматически получают nodeSelector и
+# toleration узла apps (admission-плагины PodNodeSelector и
+# PodTolerationRestriction включает Terraform при создании кластера).
+appNamespace:
+  name: app
+  nodeSelector: platform.node=apps
+  tolerations: '[{"key":"workload","operator":"Equal","value":"apps","effect":"NoSchedule"}]'
+
+# PersistentVolume с данными в каталоге volumes/ репозитория
+# (смонтирован в узлы как /volumes).
+#   path  — подкаталог volumes/;
+#   node  — значение метки platform.node узла (по умолчанию core);
+#   claim — namespace/имя PVC, к которому PV привязан заранее;
+#   accessMode — по умолчанию ReadWriteOnce.
+volumes:
+  - { name: pv-db-pg, size: 5Gi, path: db/pg, claim: db/data-postgresql-0 }
+  - { name: pv-db-pgadmin, size: 2Gi, path: db/pgadmin, claim: db/pgadmin }
+  - { name: pv-db-redis, size: 2Gi, path: db/redis, claim: db/redis-data-redis-master-0 }
+  - { name: pv-db-ch, size: 10Gi, path: db/ch, claim: db/data-clickhouse-shard0-0 }
+  - { name: pv-db-es, size: 10Gi, path: db/es, claim: db/data-elasticsearch-master-0 }
+  - { name: pv-mb, size: 5Gi, path: mb, claim: mb/data-kafka-controller-0 }
+  - { name: pv-llm-llama, size: 30Gi, path: llm/llama, claim: llm/models-llama-0, node: llms }
+  - { name: pv-llm-webui, size: 2Gi, path: llm/webui, claim: llm/open-webui, node: llms }
+  - { name: pv-secret, size: 2Gi, path: secret, claim: secret/data-vault-0 }
+  - { name: pv-vcs-registry, size: 10Gi, path: vcs/registry, claim: vcs/data-registry-0 }
+  - { name: pv-backups, size: 20Gi, path: backups, claim: backup/minio }
+  - { name: pv-logs-grafana, size: 2Gi, path: logs/grafana, claim: logs/logs-grafana }
+  # Папки приложений из Argo CD: volumes/app/<приложение> (k8s/app).
+  - { name: pv-app, size: 50Gi, path: app, claim: app/app-data, node: apps, accessMode: ReadWriteMany }
+  # PVC создают операторы и chart GitLab: PV выбираются по volumeName или метке.
+  - { name: pv-logs-prometheus, size: 10Gi, path: logs/prometheus }
+  - { name: pv-logs-alertmanager, size: 1Gi, path: logs/alertmanager }
+  - { name: pv-vcs-gitaly, size: 10Gi, path: vcs/gitaly, labels: { volume: gitaly } }

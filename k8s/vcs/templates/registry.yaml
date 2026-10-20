@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      nodeSelector:
+        platform.node: core
+      containers:
+        - name: registry
+          image: {{ .Values.registry.image }}
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            {{- range $name, $value := .Values.registry.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # Секреты создаёт shared-secrets job chart GitLab.
+            - name: REGISTRY_HTTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-registry-httpsecret
+                  key: secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+            - name: registry-auth
+              mountPath: /etc/docker/registry/certificate.crt
+              subPath: registry-auth.crt
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: data-registry-0
+        - name: registry-auth
+          secret:
+            secretName: gitlab-registry-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+spec:
+  selector:
+    app: registry
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-registry-0
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local
+  resources:
+    requests:
+      storage: {{ .Values.registry.storage }}

@@ -1,0 +1,18 @@
+apiVersion: v2
+name: cicd
+description: Argo CD, GitLab Runner и Kyverno (политики для подов приложений)
+type: application
+version: 0.3.0
+dependencies:
+  - name: kyverno
+    version: 3.9.1
+    repository: https://kyverno.github.io/kyverno/
+    condition: kyverno.enabled
+  - name: argo-cd
+    version: 10.10.5
+    repository: https://argoproj.github.io/argo-helm
+    condition: argo-cd.enabled
+  - name: gitlab-runner
+    version: 0.94.0
+    repository: https://charts.gitlab.io
+    condition: gitlab-runner.enabled

@@ -1,0 +1,13 @@
+---
+# Установка или обновление релиза Helm из k8s/<chart> с values-<env>.yaml;
+# release.args — дополнительные аргументы helm.
+- name: "Helm: {{ release.name }}"
+  ansible.builtin.command:
+    argv: >-
+      {{ ['helm', 'upgrade', '--install', release.name, platform_charts ~ '/' ~ release.chart,
+          '--kube-context', platform_context,
+          '--namespace', release.namespace | default(release.chart),
+          '--values', platform_charts ~ '/' ~ release.chart ~ '/values-' ~ platform_env ~ '.yaml',
+          '--take-ownership', '--timeout', release.timeout | default('20m')]
+         + (['--wait'] if release.wait | default(true) else [])
+         + (release.args | default([])) }}

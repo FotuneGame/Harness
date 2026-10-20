@@ -1,0 +1,75 @@
+# Расписание K8up (Schedule backup) в каждом namespace из списка.
+schedule:
+  namespaces: [db, mb, llm, vcs, secret, acl, logs, app]
+  backup: "0 2 * * *"
+  check: "0 3 * * 0"
+  prune: "0 4 * * 0"
+  keepLast: 7
+  keepDaily: 7
+
+# Service minio:9000, Deployment minio, PVC minio (volumes/backups).
+minio:
+  fullnameOverride: minio
+  mode: standalone
+  existingSecret: minio-credentials
+  # hostPath-PV не поддерживает fsGroup, поэтому MinIO запускается от root.
+  securityContext:
+    enabled: false
+  nodeSelector:
+    platform.node: core
+  persistence:
+    storageClass: local
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  # Бакеты, политики и пользователи создают post-install job chart MinIO.
+  buckets:
+    - { name: backups, policy: none }
+    - { name: gitlab-artifacts, policy: none }
+    - { name: gitlab-lfs, policy: none }
+    - { name: gitlab-uploads, policy: none }
+    - { name: gitlab-packages, policy: none }
+    - { name: gitlab-pages, policy: none }
+  policies:
+    - name: gitlab-storage
+      statements:
+        - resources: ["arn:aws:s3:::gitlab-*"]
+          actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
+        - resources: ["arn:aws:s3:::gitlab-*/*"]
+          actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+    - name: k8up-backups
+      statements:
+        - resources: ["arn:aws:s3:::backups"]
+          actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
+        - resources: ["arn:aws:s3:::backups/*"]
+          actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+  # Access key — имя пользователя (gitlab используется в k8s/secret, k8up — ниже).
+  users:
+    - accessKey: gitlab
+      existingSecret: minio-gitlab-credentials
+      existingSecretKey: secretKey
+      policy: gitlab-storage
+    - accessKey: k8up
+      existingSecret: minio-k8up-credentials
+      existingSecretKey: secretKey
+      policy: k8up-backups
+
+k8up:
+  fullnameOverride: k8up
+  nodeSelector:
+    platform.node: core
+  envVars:
+    - name: BACKUP_GLOBALS3ENDPOINT
+      value: http://minio.backup.svc.cluster.local:9000
+    - name: BACKUP_GLOBALS3BUCKET
+      value: backups
+    - name: BACKUP_GLOBALACCESSKEYID
+      value: k8up
+    - name: BACKUP_GLOBALSECRETACCESSKEY
+      valueFrom:
+        secretKeyRef: { name: minio-k8up-credentials, key: secretKey }
+    - name: BACKUP_GLOBALREPOPASSWORD
+      valueFrom:
+        secretKeyRef: { name: k8up-restic-credentials, key: password }

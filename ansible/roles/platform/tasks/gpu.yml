@@ -1,0 +1,91 @@
+---
+# VRAM видеокарты распределяется между узлами (terraform/variables.tf,
+# nodes.*.vram_mib), HAMi ограничивает VRAM подов. llama.cpp получает GPU,
+# если у узла llms есть доля VRAM и Kubernetes видит ресурс nvidia.com/gpu.
+# В WSL2 GPU может быть недоступен — тогда llama.cpp работает на CPU.
+- name: GPU по умолчанию выключен
+  ansible.builtin.set_fact:
+    platform_gpu_nodes: "{{ platform_tf.gpu_nodes }}"
+    platform_gpu: false
+    platform_llms_vram: 0
+
+- name: Узел llms
+  ansible.builtin.command: kubectl get nodes -l platform.node=llms -o jsonpath={.items[0].metadata.name}
+  changed_when: false
+  register: platform_llms_node
+
+- name: GPU в контейнерах узлов
+  ansible.builtin.command: >-
+    docker inspect --format '{{ '{{' }}json .HostConfig.DeviceRequests{{ '}}' }}' {{ platform_llms_node.stdout }}
+  changed_when: false
+  register: platform_node_devices
+
+- name: HAMi
+  when:
+    - platform_gpu_nodes | length > 0
+    - "'gpu' in platform_node_devices.stdout"
+  block:
+    # Addon minikube регистрирует nvidia.com/gpu без ограничений VRAM.
+    - name: Отключение addon nvidia-device-plugin
+      ansible.builtin.command: minikube addons disable nvidia-device-plugin --profile {{ platform_context }}
+      changed_when: false
+
+    # HAMi регистрирует на узле VRAM × devicememoryscaling (доля узла).
+    - name: Настройки HAMi для узлов
+      ansible.builtin.set_fact:
+        platform_hami_nodes: >-
+          {{ platform_hami_nodes | default([]) + [{
+               'name': item.key,
+               'operatingmode': 'hami-core',
+               'devicememoryscaling': item.value.memory_scaling,
+               'devicesplitcount': 10,
+               'preconfigureddevicememory': 0,
+               'enablenumatopology': false,
+               'migstrategy': 'none',
+               'filterdevices': {'uuid': [], 'index': []},
+               'enablegetpreferredallocation': false}] }}
+      loop: "{{ platform_gpu_nodes | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}: {{ item.value.vram_mib }} МиБ"
+
+    - name: Установка HAMi
+      ansible.builtin.include_tasks: release.yml
+      vars:
+        release:
+          name: platform-gpu
+          chart: gpu
+          namespace: kube-system
+          timeout: 5m
+          args:
+            - --set-json
+            - "hami.devicePlugin.nodeConfiguration.config={{ {'nodeconfig': platform_hami_nodes} | to_json | to_json }}"
+
+    - name: Ожидание ресурса nvidia.com/gpu на узле llms
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - node
+          - "{{ platform_llms_node.stdout }}"
+          - -o=jsonpath={.status.allocatable.nvidia\.com/gpu}
+      changed_when: false
+      register: platform_gpu_count
+      until: platform_gpu_count.stdout not in ['', '0']
+      retries: 24
+      delay: 5
+      when: platform_llms_node.stdout in platform_gpu_nodes
+
+    - name: GPU для llama.cpp
+      ansible.builtin.set_fact:
+        platform_gpu: true
+        platform_llms_vram: "{{ platform_gpu_nodes[platform_llms_node.stdout].vram_mib }}"
+      when: platform_llms_node.stdout in platform_gpu_nodes
+  rescue:
+    - name: GPU недоступен в Ubuntu
+      ansible.builtin.fail:
+        msg: "HAMi не зарегистрировал nvidia.com/gpu: проверьте драйвер и NVIDIA Container Toolkit."
+      when: not platform_is_wsl | bool
+
+    - name: GPU недоступен в WSL2
+      ansible.builtin.debug:
+        msg: "GPU не доступен Kubernetes в WSL2: llama.cpp работает на CPU."

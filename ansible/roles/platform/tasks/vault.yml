@@ -1,0 +1,74 @@
+---
+- name: Ожидание запуска Vault
+  ansible.builtin.command: >-
+    kubectl wait pod/vault-0 -n secret --for=jsonpath={.status.phase}=Running --timeout=10m
+  changed_when: false
+  register: platform_vault_pod
+  until: platform_vault_pod.rc == 0
+  retries: 12
+  delay: 5
+
+- name: Состояние Vault
+  ansible.builtin.command: kubectl exec -n secret vault-0 -- vault status -format=json
+  changed_when: false
+  failed_when: platform_vault_status.stdout | length == 0
+  register: platform_vault_status
+
+- name: Разбор состояния Vault
+  ansible.builtin.set_fact:
+    platform_vault: "{{ platform_vault_status.stdout | from_json }}"
+
+# Vault запечатывается при каждом перезапуске pod: нужны 3 из 5 unseal key.
+- name: Разблокировка Vault
+  when: platform_vault.initialized and platform_vault.sealed
+  block:
+    - name: Ввод unseal key
+      ansible.builtin.pause:
+        prompt: "Unseal key Vault ({{ item }} из 3)"
+        echo: false
+      loop: [1, 2, 3]
+      register: platform_unseal_keys
+      no_log: true
+
+    - name: Применение unseal key
+      ansible.builtin.command:
+        argv: [kubectl, exec, -i, -n, secret, vault-0, --, sh, -c, 'read -r key; vault operator unseal "$key"']
+        stdin: "{{ item.user_input }}"
+      loop: "{{ platform_unseal_keys.results }}"
+      no_log: true
+
+# Первый запуск: 5 unseal keys (порог 3), политики и роли для Vault Secrets
+# Operator, пользователь admin и сгенерированные секреты. Root token отзывается.
+- name: Первичная настройка Vault
+  when: not platform_vault.initialized
+  block:
+    - name: Инициализация Vault
+      ansible.builtin.command: kubectl exec -n secret vault-0 -- vault operator init -format=json
+      register: platform_vault_init
+      no_log: true
+
+    - name: Ключи Vault и пароль admin
+      ansible.builtin.set_fact:
+        platform_vault_keys: "{{ (platform_vault_init.stdout | from_json).unseal_keys_b64 }}"
+        platform_vault_root: "{{ (platform_vault_init.stdout | from_json).root_token }}"
+        platform_vault_admin_password: "{{ lookup('ansible.builtin.password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      no_log: true
+
+    - name: Сохраните ключи Vault (показываются один раз)
+      ansible.builtin.debug:
+        msg:
+          - "Unseal keys (любые 3 из 5 нужны после каждого запуска кластера):"
+          - "{{ platform_vault_keys }}"
+          - "Vault UI https://vault.local: метод Username, пользователь admin, пароль {{ platform_vault_admin_password }}"
+
+    - name: Разблокировка и настройка Vault
+      ansible.builtin.command:
+        argv: [kubectl, exec, -i, -n, secret, vault-0, --, sh, -s]
+        stdin: "{{ lookup('ansible.builtin.template', 'vault-init.sh.j2') }}"
+      no_log: true
+  rescue:
+    - name: Ошибка настройки Vault
+      ansible.builtin.fail:
+        msg: >-
+          Настройка Vault не завершена. Root token для ручного исправления:
+          {{ platform_vault_root | default('не получен') }}. После исправления повторите ./cluster.sh up.

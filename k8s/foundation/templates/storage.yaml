@@ -1,0 +1,38 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+{{- range .Values.volumes }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .name }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  capacity:
+    storage: {{ .size }}
+  accessModes: [{{ .accessMode | default "ReadWriteOnce" }}]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local
+  {{- with .claim }}
+  claimRef:
+    namespace: {{ splitList "/" . | first }}
+    name: {{ splitList "/" . | last }}
+  {{- end }}
+  hostPath:
+    path: /volumes/{{ .path }}
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: platform.node
+              operator: In
+              values: [{{ .node | default "core" }}]
+{{- end }}

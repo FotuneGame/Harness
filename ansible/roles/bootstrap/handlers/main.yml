@@ -1,5 +1,0 @@
----
-- name: Перезапуск службы Docker
-  ansible.builtin.service:
-    name: docker
-    state: restarted

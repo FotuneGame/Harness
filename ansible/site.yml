@@ -1,6 +1,0 @@
----
-- name: Подготовка рабочей станции
-  hosts: local
-  become: true
-  roles:
-    - bootstrap

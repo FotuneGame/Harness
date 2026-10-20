@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redisinsight
+spec:
+  selector:
+    matchLabels:
+      app: redisinsight
+  template:
+    metadata:
+      labels:
+        app: redisinsight
+    spec:
+      nodeSelector:
+        platform.node: core
+      containers:
+        - name: redisinsight
+          image: {{ .Values.redisinsight.image }}
+          ports:
+            - containerPort: 5540
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redisinsight
+spec:
+  selector:
+    app: redisinsight
+  ports:
+    - port: 5540
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: redisinsight
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: redisinsight
+  minReplicas: 1
+  maxReplicas: {{ .Values.redisinsight.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.redisinsight.targetCPUUtilizationPercentage }}

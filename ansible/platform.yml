@@ -1,0 +1,6 @@
+---
+# Установка сервисов в кластер (Helm) и настройка Vault. Запуск: ./cluster.sh up.
+- name: Развёртывание платформы
+  hosts: local
+  roles:
+    - platform

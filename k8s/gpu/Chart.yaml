@@ -1,0 +1,10 @@
+apiVersion: v2
+name: gpu
+description: HAMi — распределение VRAM видеокарты между узлами и подами
+type: application
+version: 0.3.0
+dependencies:
+  - name: hami
+    version: 2.10.0
+    repository: https://project-hami.github.io/HAMi/
+    condition: hami.enabled

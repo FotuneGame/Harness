@@ -1,0 +1,17 @@
+argo-cd:
+  server:
+    replicas: 1
+    resources: { requests: { cpu: 100m, memory: 256Mi } }
+  controller:
+    replicas: 1
+    resources: { requests: { cpu: 100m, memory: 512Mi } }
+  repoServer:
+    replicas: 1
+    resources: { requests: { cpu: 100m, memory: 256Mi } }
+  applicationSet:
+    replicas: 1
+    resources: { requests: { cpu: 50m, memory: 128Mi } }
+
+gitlab-runner:
+  concurrent: 2
+  jobLimits: { cpu: "1", memory: 1Gi }

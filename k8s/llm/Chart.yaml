@@ -1,0 +1,10 @@
+apiVersion: v2
+name: llm
+description: llama.cpp и Open WebUI
+type: application
+version: 0.2.0
+dependencies:
+  - name: open-webui
+    version: 17.0.0
+    repository: https://open-webui.github.io/helm-charts
+    condition: open-webui.enabled

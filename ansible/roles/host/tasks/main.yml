@@ -1,0 +1,155 @@
+---
+- name: Проверка пользователя
+  ansible.builtin.assert:
+    that: ansible_user_id != 'root'
+    fail_msg: Запускайте ./cluster.sh от обычного пользователя (minikube с драйвером docker не работает от root).
+
+- name: Список действий, после которых нужен перезапуск сессии
+  ansible.builtin.set_fact:
+    host_restart: []
+
+- name: Установка пакетов
+  become: true
+  ansible.builtin.apt:
+    name: "{{ host_packages }}"
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Установка helm и terraform
+  become: true
+  vars:
+    host_archive_dir: "{{ host_archives_dir }}/{{ item.url | basename | regex_replace('\\.(tar\\.gz|zip)$', '') }}"
+  block:
+    - name: Каталоги архивов
+      ansible.builtin.file:
+        path: "{{ host_archive_dir }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ host_archives }}"
+      loop_control:
+        label: "{{ host_archive_dir }}"
+
+    - name: Загрузка архивов
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        checksum: "{{ item.checksum }}"
+        dest: "{{ host_archive_dir }}.archive"
+        mode: "0644"
+      loop: "{{ host_archives }}"
+      loop_control:
+        label: "{{ item.url | basename }}"
+
+    - name: Распаковка архивов
+      ansible.builtin.unarchive:
+        src: "{{ host_archive_dir }}.archive"
+        dest: "{{ host_archive_dir }}"
+        remote_src: true
+        creates: "{{ host_archive_dir }}/{{ item.binary }}"
+      loop: "{{ host_archives }}"
+      loop_control:
+        label: "{{ item.url | basename }}"
+
+    - name: Ссылки в /usr/local/bin
+      ansible.builtin.file:
+        src: "{{ host_archive_dir }}/{{ item.binary }}"
+        dest: "/usr/local/bin/{{ item.binary | basename }}"
+        state: link
+        force: true
+      loop: "{{ host_archives }}"
+      loop_control:
+        label: "/usr/local/bin/{{ item.binary | basename }}"
+
+- name: Параметры из Terraform
+  ansible.builtin.shell: |
+    set -eu
+    terraform -chdir="$TF_DIR" init -input=false >/dev/null
+    echo 'jsonencode(local.ansible)' | terraform -chdir="$TF_DIR" console
+  environment:
+    TF_DIR: "{{ host_repo }}/terraform"
+  changed_when: false
+  register: host_tf_raw
+
+- name: Разбор параметров Terraform
+  ansible.builtin.set_fact:
+    host_tf: "{{ host_tf_raw.stdout | from_json | from_json }}"
+
+- name: minikube и kubectl (версия Kubernetes из Terraform)
+  become: true
+  block:
+    - name: Загрузка minikube и kubectl
+      ansible.builtin.get_url:
+        url: "{{ item.url }}"
+        checksum: "{{ item.checksum }}"
+        dest: "{{ item.dest }}"
+        mode: "0755"
+      loop: "{{ host_binaries }}"
+      loop_control:
+        label: "{{ item.dest }}"
+
+    # Проброс портов 80/443 без root: ./cluster.sh ports open.
+    - name: Разрешение kubectl слушать порты ниже 1024
+      community.general.capabilities:
+        path: /usr/local/bin/kubectl
+        capability: cap_net_bind_service+ep
+
+- name: Docker в Ubuntu
+  when: not host_is_wsl | bool
+  become: true
+  block:
+    - name: Поиск установленного Docker
+      ansible.builtin.shell: command -v docker
+      changed_when: false
+      failed_when: false
+      register: host_docker_cli
+
+    - name: Установка Docker
+      ansible.builtin.apt:
+        name: docker.io
+      when: host_docker_cli.rc != 0
+
+    - name: Запуск Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Доступ пользователя к Docker
+      ansible.builtin.user:
+        name: "{{ ansible_user_id }}"
+        groups: docker
+        append: true
+      register: host_docker_group
+
+    - name: Требуется повторный вход для группы docker
+      ansible.builtin.set_fact:
+        host_restart: "{{ host_restart + ['перелогиньтесь (или newgrp docker), чтобы применить группу docker'] }}"
+      when: host_docker_group is changed
+
+- name: NVIDIA GPU в Ubuntu
+  ansible.builtin.include_tasks: gpu.yml
+  when: not host_is_wsl | bool
+
+- name: Настройка WSL
+  ansible.builtin.include_tasks: wsl.yml
+  when: host_is_wsl | bool
+
+- name: Ключ etcd, TLS и hosts
+  ansible.builtin.include_tasks: files.yml
+
+- name: Проверка Docker
+  ansible.builtin.command: docker info
+  changed_when: false
+  failed_when: false
+  register: host_docker_info
+
+- name: Остановка до перезапуска сессии
+  ansible.builtin.fail:
+    msg: "Настройки применены. Выполните: {{ host_restart | join('; ') }}. Затем снова ./cluster.sh up."
+  when: host_restart | length > 0
+
+- name: Проверка доступа к Docker
+  ansible.builtin.assert:
+    that: host_docker_info.rc == 0
+    fail_msg: >-
+      Docker недоступен. {{ 'Запустите Docker Desktop и включите Settings → Resources →
+      WSL integration для этого дистрибутива.' if host_is_wsl | bool else 'Проверьте службу docker.' }}

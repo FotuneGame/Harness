@@ -1,103 +1,67 @@
-variable "host_cpu_cores" {
-  description = "Количество физических ядер процессора на сервере."
-  type        = number
-  default     = 6
-
-  validation {
-    condition     = var.host_cpu_cores > 0 && floor(var.host_cpu_cores) == var.host_cpu_cores
-    error_message = "Количество ядер процессора должно быть положительным целым числом."
-  }
-}
-
-variable "host_memory_gib" {
-  description = "Объём оперативной памяти сервера в ГиБ."
-  type        = number
-  default     = 32
-
-  validation {
-    condition     = var.host_memory_gib > 0 && floor(var.host_memory_gib) == var.host_memory_gib
-    error_message = "Объём оперативной памяти должен быть положительным целым числом ГиБ."
-  }
-}
-
-variable "host_storage_gib" {
-  description = "Объём дискового пространства сервера в ГиБ."
-  type        = number
-  default     = 450
-
-  validation {
-    condition     = var.host_storage_gib > 0 && floor(var.host_storage_gib) == var.host_storage_gib
-    error_message = "Объём дискового пространства должен быть положительным целым числом ГиБ."
-  }
-}
-
-variable "gpu" {
-  description = "Графический процессор, доступный платформенному узлу."
+variable "host" {
+  description = "Сервер: Intel Core i5-11400F (6 ядер / 12 потоков), разрешено 32 ГиБ RAM из 48, диск 450 ГиБ, GTX 1650 (4 ГиБ VRAM)."
   type = object({
-    model  = string
-    memory = number
+    cpus         = number
+    memory_gib   = number
+    disk_gib     = number
+    gpu_vram_mib = number
   })
   default = {
-    model  = "NVIDIA GeForce GTX 1650"
-    memory = 4
+    cpus         = 12
+    memory_gib   = 32
+    disk_gib     = 450
+    gpu_vram_mib = 4096
   }
 }
 
 variable "nodes" {
-  description = "Ресурсы логических узлов Kubernetes, выделенные на физическом сервере."
+  description = "Узлы Kubernetes: core — платформа и мониторинг, llms — LLM, apps — приложения из Argo CD. vram_mib — доля VRAM видеокарты (HAMi)."
   type = map(object({
-    cpu_cores  = number
+    cpus       = number
     memory_gib = number
     disk_gib   = number
+    vram_mib   = optional(number, 0)
   }))
-
   default = {
-    platform = {
-      cpu_cores  = 2
-      memory_gib = 16
-      disk_gib   = 100
-    }
-    llm = {
-      cpu_cores  = 2
-      memory_gib = 8
-      disk_gib   = 100
-    }
-    applications = {
-      cpu_cores  = 2
-      memory_gib = 4
-      disk_gib   = 100
-    }
+    core = { cpus = 6, memory_gib = 16, disk_gib = 100, vram_mib = 0 }
+    llms = { cpus = 4, memory_gib = 8, disk_gib = 100, vram_mib = 4096 }
+    apps = { cpus = 2, memory_gib = 4, disk_gib = 100, vram_mib = 0 }
   }
 
   validation {
-    condition = (
-      length(var.nodes) == 3 &&
-      contains(keys(var.nodes), "platform") &&
-      contains(keys(var.nodes), "llm") &&
-      contains(keys(var.nodes), "applications")
-    )
-    error_message = "Определите ровно три узла: platform, llm и applications."
+    condition     = toset(keys(var.nodes)) == toset(["core", "llms", "apps"])
+    error_message = "Нужны ровно три узла: core, llms и apps."
   }
 
   validation {
     condition = alltrue([
       for node in values(var.nodes) :
-      node.cpu_cores > 0 &&
-      floor(node.cpu_cores) == node.cpu_cores &&
-      node.memory_gib > 0 &&
-      floor(node.memory_gib) == node.memory_gib &&
-      node.disk_gib > 0 &&
-      floor(node.disk_gib) == node.disk_gib
+      node.cpus >= 1 && node.memory_gib >= 1 && floor(node.memory_gib) == node.memory_gib
     ])
-    error_message = "CPU, память и диск узлов должны быть положительными целыми числами; память и диск задаются в ГиБ."
+    error_message = "CPU и память узлов должны быть положительными, память — целым числом ГиБ."
   }
 
   validation {
-    condition = (
-      var.nodes.platform.disk_gib == var.nodes.llm.disk_gib &&
-      var.nodes.platform.disk_gib == var.nodes.applications.disk_gib
-    )
-    error_message = "Minikube создаёт одинаковый размер диска для всех узлов: укажите равный disk_gib в Terraform."
+    condition = alltrue([
+      for node in values(var.nodes) : node.vram_mib >= 0 && floor(node.vram_mib) == node.vram_mib
+    ])
+    error_message = "vram_mib узлов — целое неотрицательное число МиБ."
+  }
+
+  validation {
+    condition     = length(distinct([for node in values(var.nodes) : node.disk_gib])) == 1
+    error_message = "Minikube создаёт узлы с одинаковым диском: укажите равный disk_gib."
   }
 }
 
+variable "gpu" {
+  description = "Передать NVIDIA GeForce GTX 1650 (4 ГБ) в кластер, если Docker видит GPU."
+  type        = bool
+  default     = true
+}
+
+variable "kubernetes_version" {
+  description = "Версия Kubernetes; Ansible ставит kubectl этой же версии."
+  type        = string
+  default     = "v1.31.0"
+}

@@ -1,0 +1,169 @@
+# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
+# разрешает образы вне bitnami/.
+global:
+  security:
+    allowInsecureImages: true
+
+# Service/StatefulSet postgresql, PVC data-postgresql-0.
+postgresql:
+  fullnameOverride: postgresql
+  auth:
+    enablePostgresUser: true
+    # Роли и базы приложений создаёт primary.initdb.scripts.
+    username: ""
+    database: ""
+    existingSecret: postgresql-credentials
+    secretKeys:
+      adminPasswordKey: password
+  primary:
+    nodeSelector:
+      platform.node: core
+    persistence:
+      storageClass: local
+      size: 5Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    extraEnvVars:
+      - name: GITLAB_DB_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: gitlab-db-credentials, key: password }
+      - name: KEYCLOAK_DB_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: keycloak-db-credentials, key: password }
+      - name: POSTGRES_EXPORTER_PASSWORD
+        valueFrom:
+          secretKeyRef: { name: postgres-exporter-credentials, key: password }
+    initdb:
+      scripts:
+        # Пароли берутся из переменных окружения, а не из values.
+        init.sql: |
+          \getenv gitlab_password GITLAB_DB_PASSWORD
+          \getenv keycloak_password KEYCLOAK_DB_PASSWORD
+          \getenv exporter_password POSTGRES_EXPORTER_PASSWORD
+          CREATE ROLE gitlab LOGIN PASSWORD :'gitlab_password';
+          CREATE ROLE keycloak LOGIN PASSWORD :'keycloak_password';
+          CREATE ROLE postgres_exporter LOGIN PASSWORD :'exporter_password';
+          GRANT pg_monitor TO postgres_exporter;
+          CREATE DATABASE gitlabhq_production OWNER gitlab;
+          CREATE DATABASE keycloak OWNER keycloak;
+          \connect gitlabhq_production
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          CREATE EXTENSION IF NOT EXISTS btree_gist;
+  volumePermissions:
+    enabled: true
+
+# Service/StatefulSet redis-master, PVC redis-data-redis-master-0.
+redis:
+  fullnameOverride: redis
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: redis-credentials
+    existingSecretPasswordKey: password
+  master:
+    nodeSelector:
+      platform.node: core
+    persistence:
+      storageClass: local
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+  volumePermissions:
+    enabled: true
+
+# Service clickhouse (8123/9000, метрики 9363), StatefulSet clickhouse-shard0,
+# PVC data-clickhouse-shard0-0.
+clickhouse:
+  fullnameOverride: clickhouse
+  image:
+    repository: bitnamilegacy/clickhouse
+  replicaCount: 1
+  shards: 1
+  keeper:
+    enabled: false
+  auth:
+    username: default
+    existingSecret: clickhouse-credentials
+    existingSecretKey: password
+  nodeSelector:
+    platform.node: core
+  persistence:
+    storageClass: local
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  metrics:
+    enabled: true
+
+# Service elasticsearch (9200), StatefulSet elasticsearch-master,
+# PVC data-elasticsearch-master-0.
+elasticsearch:
+  fullnameOverride: elasticsearch
+  image:
+    repository: bitnamilegacy/elasticsearch
+  security:
+    enabled: false
+  # Без mmap Elasticsearch не требует vm.max_map_count=262144 на узле,
+  # поэтому привилегированный sysctl-контейнер не нужен.
+  extraConfig:
+    node:
+      store:
+        allow_mmap: false
+  sysctlImage:
+    enabled: false
+  master:
+    replicaCount: 1
+    heapSize: 512m
+    nodeSelector:
+      platform.node: core
+    persistence:
+      storageClass: local
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+  data:
+    replicaCount: 0
+  coordinating:
+    replicaCount: 0
+  ingest:
+    enabled: false
+  volumePermissions:
+    enabled: true
+
+# Deployment/Service pgadmin, PVC pgadmin.
+pgadmin4:
+  fullnameOverride: pgadmin
+  existingSecret: pgadmin-credentials
+  secretKeys:
+    pgadminPasswordKey: password
+  env:
+    email: admin@example.com
+  nodeSelector:
+    platform.node: core
+  persistentVolume:
+    enabled: true
+    storageClass: local
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 75
+
+# Официального chart нет: Deployment/Service/HPA redisinsight (templates/).
+redisinsight:
+  image: redis/redisinsight:latest
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 75

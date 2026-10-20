@@ -1,0 +1,15 @@
+{{- range .Values.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+{{- end }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.appNamespace.name }}
+  annotations:
+    scheduler.alpha.kubernetes.io/node-selector: {{ .Values.appNamespace.nodeSelector | quote }}
+    scheduler.alpha.kubernetes.io/defaultTolerations: {{ .Values.appNamespace.tolerations | quote }}

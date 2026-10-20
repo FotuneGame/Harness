@@ -1,15 +1,16 @@
-output "host_profile" {
-  description = "Ресурсы физического сервера. Terraform сохраняет этот профиль, но не выделяет оборудование."
+output "nodes" {
+  description = "Узлы кластера: имя в Kubernetes, метка platform.node и выделенные ресурсы."
   value = {
-    cpu_cores   = var.host_cpu_cores
-    memory_gib  = var.host_memory_gib
-    storage_gib = var.host_storage_gib
-    gpu         = var.gpu
+    for role, node in var.nodes : local.node_names[role] => merge(node, { label = role })
   }
 }
 
-output "node_profiles" {
-  description = "Ресурсы логических узлов Kubernetes: платформенные сервисы, LLM и приложения."
-  value       = { for role, node in terraform_data.node_profile : role => node.output }
+output "ansible" {
+  description = "Параметры для Ansible: профиль, память WSL, версия Kubernetes, ключ etcd, доли VRAM."
+  value       = local.ansible
 }
 
+output "allocated" {
+  description = "Сумма ресурсов узлов и ресурсы сервера."
+  value       = { nodes = local.allocated, host = var.host }
+}

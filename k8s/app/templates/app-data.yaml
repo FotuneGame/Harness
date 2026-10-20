@@ -1,0 +1,83 @@
+{{- $data := .Values.appData }}
+# PVC на PV pv-app (volumes/app на узле apps, k8s/foundation).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $data.claim }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: local
+  volumeName: pv-app
+  resources:
+    requests:
+      storage: {{ $data.size }}
+---
+# Монтирует volumes/app/<имя приложения> в создаваемые поды namespace.
+# Меняются только поды (autogen выключен), поэтому Argo CD не видит
+# расхождений в Deployment и других ресурсах из Git.
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: app-data
+spec:
+  autogen:
+    podControllers:
+      controllers: []
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+  variables:
+    - name: nameLabels
+      expression: >-
+        {{ $data.nameLabels | toJson }}.filter(k,
+          has(object.metadata.labels) && k in object.metadata.labels)
+    - name: appName
+      expression: >-
+        size(variables.nameLabels) > 0
+          ? object.metadata.labels[variables.nameLabels[0]]
+          : {{ $data.defaultName | quote }}
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            spec: Object.spec{
+              volumes: [Object.spec.volumes{
+                name: "app-data",
+                persistentVolumeClaim: Object.spec.volumes.persistentVolumeClaim{
+                  claimName: {{ $data.claim | quote }}
+                }
+              }],
+              containers: object.spec.containers.map(c, Object.spec.containers{
+                name: c.name,
+                volumeMounts: [Object.spec.containers.volumeMounts{
+                  name: "app-data", mountPath: {{ $data.mountPath | quote }}, subPath: variables.appName
+                }]
+              })
+            }
+          }
+    # command — атомарный список, ApplyConfiguration его не задаёт: init-контейнер
+    # добавляется через JSONPatch.
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          (has(object.spec.initContainers) ? [] :
+            [JSONPatch{op: "add", path: "/spec/initContainers", value: []}]) +
+          [JSONPatch{op: "add", path: "/spec/initContainers/-", value: Object.spec.initContainers{
+            name: "app-data-permissions",
+            image: {{ $data.initImage | quote }},
+            command: ["sh", "-c", "chmod 0777 /app-data"],
+            securityContext: Object.spec.initContainers.securityContext{runAsUser: 0, runAsNonRoot: false},
+            volumeMounts: [Object.spec.initContainers.volumeMounts{
+              name: "app-data", mountPath: "/app-data", subPath: variables.appName
+            }]
+          }}]

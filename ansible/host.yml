@@ -1,0 +1,7 @@
+---
+# Установка пакетов и CLI на сервер, настройка WSL, Docker, GPU, hosts,
+# TLS-сертификата и ключа шифрования etcd. Запуск: ./cluster.sh up.
+- name: Подготовка сервера
+  hosts: local
+  roles:
+    - host

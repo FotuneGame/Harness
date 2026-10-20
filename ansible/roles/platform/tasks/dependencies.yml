@@ -1,0 +1,27 @@
+---
+# Скачивает зависимости charts (charts/*.tgz), только если их нет или версия
+# не совпадает с Chart.lock. Helm-репозитории берутся из Chart.yaml.
+- name: Состояние зависимостей
+  ansible.builtin.command: helm dependency list {{ platform_charts }}/{{ item }}
+  loop: "{{ platform_releases | map(attribute='chart') | list + ['foundation', 'secret', 'proxy', 'gpu'] }}"
+  changed_when: false
+  register: platform_dependencies
+
+- name: Charts с недостающими зависимостями
+  ansible.builtin.set_fact:
+    platform_outdated: >-
+      {{ platform_dependencies.results | selectattr('stdout', 'search', 'missing|wrong version')
+         | map(attribute='item') | list }}
+
+- name: Helm-репозитории
+  ansible.builtin.command: helm repo add {{ item | regex_replace('^https?://|/$', '') | regex_replace('[^a-zA-Z0-9]+', '-') }} {{ item }} --force-update
+  loop: >-
+    {{ query('ansible.builtin.file', *(platform_outdated | map('regex_replace', '^', platform_charts ~ '/')
+                                       | map('regex_replace', '$', '/Chart.yaml')))
+       | map('from_yaml') | map(attribute='dependencies') | flatten
+       | map(attribute='repository') | select('match', '^https://') | unique }}
+  changed_when: false
+
+- name: Загрузка зависимостей
+  ansible.builtin.command: helm dependency build {{ platform_charts }}/{{ item }}
+  loop: "{{ platform_outdated }}"
