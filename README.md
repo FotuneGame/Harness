@@ -91,12 +91,10 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
 - При первом `up` выводятся 5 unseal key Vault и пароль пользователя `admin` —
   сохраните их, повторно они не показываются. После каждого запуска Vault
   запечатан: `start`, `up` и `unseal` просят 3 ключа.
-- Логины и пароли — в Vault: https://vault.local, метод Userpass, пользователь
-  `admin`. Каждый путь хранит ключи `username` (логин) и `password` (пароль).
-  - Создаются автоматически при первом `up`: `db/pgadmin`, `db/postgresql`,
-    `db/redis`, `db/clickhouse`, `vcs/gitlab-root`, `acl/keycloak`,
-    `backup/minio`, `logs/grafana`, `cicd/argocd` и др. (список —
-    `platform_vault_seed` в `ansible/roles/platform/defaults/main.yml`).
+- Логины и пароли — в Vault (какой путь для какого сайта — таблица выше).
+  - Создаются автоматически при первом `up` (список — `platform_vault_seed` в
+    `ansible/roles/platform/defaults/main.yml`); `backup/restic` — пароль
+    шифрования резервных копий K8up, без него копии не восстановить.
     Изменение в Vault позже не меняет уже созданные учётные записи; исключение —
     пароль Argo CD, он применяется при следующем `up`.
   - Заполняются вручную, затем `./cluster.sh up`:

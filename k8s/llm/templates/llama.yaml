@@ -47,6 +47,9 @@ spec:
           args:
             - --model
             - "/models/{{ $model }}"
+            # Имя модели в Open WebUI вместо пути к файлу.
+            - --alias
+            - {{ .Values.llama.model.name | quote }}
             - --host
             - 0.0.0.0
             - --port

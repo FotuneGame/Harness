@@ -28,7 +28,10 @@ llama:
     layers: 99
     imageTag: server-cuda
   server:
-    contextSize: 2048
+    # Контекст на все запросы (токены). Open WebUI добавляет к каждому
+    # сообщению инструкции и описания встроенных инструментов (~6500 токенов),
+    # Qwen2.5 поддерживает до 32768; кеш 16384 токенов занимает ~200 МБ.
+    contextSize: 16384
     noMap: false
     cacheTypeK: f16
     cacheTypeV: f16
