@@ -22,7 +22,7 @@ k8s/<chart>/
 | `foundation` | default | `platform-foundation` | Namespace, StorageClass `local`, PersistentVolume |
 | `secret` | secret | `platform-secret` | Vault, Vault Secrets Operator, синхронизация секретов |
 | `proxy` | proxy | `platform-proxy` | NGINX Ingress, маршруты `*.local` |
-| `gpu` | kube-system | `platform-gpu` | HAMi (VRAM для подов) |
+| `gpu` | kube-system | `platform-gpu` | HAMi (Ubuntu, лимиты VRAM) или NVIDIA device plugin (WSL2) |
 | `db` | db | `platform-db` | PostgreSQL, pgAdmin, Redis, RedisInsight, ClickHouse, Elasticsearch |
 | `mb` | mb | `platform-mb` | Kafka, Kafka UI |
 | `acl` | acl | `platform-acl` | Keycloak |
@@ -46,7 +46,8 @@ k8s/<chart>/
    LLM). Поды в namespace `app` попадают на узел apps и получают папку
    `volumes/app/<приложение>` в `/app-data` автоматически (chart `app`).
 5. Версии фиксированы: в `Chart.yaml` — версия chart, в values — тег образа
-   (кроме уже используемых `latest`/`main`). После смены версии обновите `Chart.lock`.
+   (кроме уже используемых `latest`/`main`). После смены версии закоммитьте
+   `Chart.lock`, который обновит `./cluster.sh up`.
 
 ## Команды
 
@@ -61,15 +62,14 @@ k8s/<chart>/
 | Применить один chart | `helm upgrade --install platform-db k8s/db -n db -f k8s/db/values-dev.yaml --take-ownership --wait` |
 | Текущие values релиза | `helm get values platform-db -n db` |
 | История и откат | `helm history platform-db -n db`, `helm rollback platform-db <ревизия> -n db` |
-| Обновить зависимости после правки `Chart.yaml` | `helm dependency update k8s/db` |
 
 `llm`, `cicd`, `gpu` и `secret` применяйте только через `./cluster.sh up`: для
 них Ansible добавляет параметры (GPU, Runner, доли VRAM) и настраивает Vault.
 
-`helm dependency update` требует добавленных репозиториев: `helm repo add <имя> <url>`
-для каждого `repository` из `Chart.yaml` (OCI-репозитории Bitnami добавлять не
-нужно). Chart `secret` не обновляйте: его архивы лежат в Git, потому что
-`helm.releases.hashicorp.com` недоступен.
+Зависимости (`charts/*.tgz`) `./cluster.sh up` приводит к `Chart.yaml` сам:
+добавляет Helm-репозитории, скачивает недостающие архивы, удаляет лишние и при
+изменённом `Chart.yaml` пересоздаёт `Chart.lock` — закоммитьте его. Архивы chart
+`secret` лежат в Git (`helm.releases.hashicorp.com` недоступен), их не меняйте.
 
 ## Изменить сервис
 
@@ -99,12 +99,12 @@ k8s/<chart>/
        condition: mongodb.enabled
    ```
 
-2. Выполните `helm dependency update k8s/<chart>` и закоммитьте `Chart.lock`.
-3. Добавьте настройки в `values.yaml` под ключом `mongodb:` (`fullnameOverride`,
+2. Добавьте настройки в `values.yaml` под ключом `mongodb:` (`fullnameOverride`,
    `nodeSelector`, ресурсы, `existingSecret`).
-4. Если нужны данные — см. «Хранение данных», пароль — «Секреты», веб-интерфейс —
+3. Если нужны данные — см. «Хранение данных», пароль — «Секреты», веб-интерфейс —
    «Адрес *.local».
-5. `./cluster.sh up <env>`.
+4. `./cluster.sh up <env>`: зависимость скачается, `Chart.lock` обновится —
+   закоммитьте его.
 
 ## Добавить новый namespace
 

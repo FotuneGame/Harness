@@ -1,4 +1,4 @@
-# Записывает в начало hosts Windows блок "127.0.0.1 <имена>" между маркерами
+# Записывает в начало hosts Windows блок строк "127.0.0.1 <имя>" между маркерами
 # "# BEGIN platform" и "# END platform". Права администратора запрашиваются
 # через UAC только при изменении файла.
 param(
@@ -17,7 +17,9 @@ $kept = foreach ($line in Get-Content -LiteralPath $path) {
     if ($line -eq $end) { $inside = $false; continue }
     if (-not $inside) { $line }
 }
-$content = @($begin, "127.0.0.1 $($Names -replace ',', ' ')", $end) + @($kept)
+# По одному имени в строке: Windows читает из строки hosts не больше 9 имён.
+$entries = foreach ($name in $Names -split ',') { "127.0.0.1 $name" }
+$content = @($begin) + @($entries) + @($end) + @($kept)
 
 if (((Get-Content -LiteralPath $path) -join "`n") -eq ($content -join "`n")) {
     Write-Output "unchanged"

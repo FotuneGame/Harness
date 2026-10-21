@@ -14,6 +14,8 @@
     name: "{{ host_packages }}"
     update_cache: true
     cache_valid_time: 3600
+    # Ждать, пока unattended-upgrades освободит dpkg (обычно после старта WSL).
+    lock_timeout: 600
 
 - name: Установка helm и terraform
   become: true
@@ -105,6 +107,7 @@
     - name: Установка Docker
       ansible.builtin.apt:
         name: docker.io
+        lock_timeout: 600
       when: host_docker_cli.rc != 0
 
     - name: Запуск Docker

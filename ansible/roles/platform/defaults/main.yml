@@ -24,6 +24,9 @@ platform_releases:
   # После cicd: политика монтирования папок использует CRD Kyverno.
   - { name: platform-app, chart: app }
 
+# Все charts, зависимости которых проверяются при up.
+platform_dependency_charts: "{{ ['foundation', 'secret', 'proxy', 'gpu'] + platform_releases | map(attribute='chart') | list }}"
+
 platform_proxy_values: "{{ lookup('file', platform_charts + '/proxy/values.yaml') | from_yaml }}"
 platform_tls_dir: "{{ platform_repo }}/volumes/proxy/tls"
 platform_tls_namespaces: "{{ (platform_proxy_values.routes | map(attribute='namespace') | list + ['vcs']) | unique }}"

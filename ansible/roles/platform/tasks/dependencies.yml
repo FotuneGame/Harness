@@ -1,19 +1,24 @@
 ---
-# Скачивает зависимости charts (charts/*.tgz), только если их нет или версия
-# не совпадает с Chart.lock. Helm-репозитории берутся из Chart.yaml.
-- name: Состояние зависимостей
-  ansible.builtin.command: helm dependency list {{ platform_charts }}/{{ item }}
-  loop: "{{ platform_releases | map(attribute='chart') | list + ['foundation', 'secret', 'proxy', 'gpu'] }}"
+# Зависимости charts (charts/*.tgz) приводятся к Chart.yaml при каждом up.
+# Chart пересобирается, если набор архивов в charts/ не совпадает с Chart.yaml:
+# зависимости нет, версия другая или остался архив удалённой зависимости
+# (Helm установил бы и его).
+- name: Charts с устаревшими зависимостями
+  ansible.builtin.shell: |
+    for chart in {{ platform_dependency_charts | join(' ') }}; do
+      dir="{{ platform_charts }}/$chart"
+      expected=$(helm dependency list "$dir" 2>/dev/null | awk 'NR > 1 && NF { print $1 "-" $2 ".tgz" }' | sort)
+      actual=$(find "$dir/charts" -maxdepth 1 -name '*.tgz' -printf '%f\n' 2>/dev/null | sort)
+      [ "$expected" = "$actual" ] || echo "$chart"
+    done
   changed_when: false
-  register: platform_dependencies
+  register: platform_outdated_raw
 
-- name: Charts с недостающими зависимостями
+- name: Список устаревших charts
   ansible.builtin.set_fact:
-    platform_outdated: >-
-      {{ platform_dependencies.results | selectattr('stdout', 'search', 'missing|wrong version')
-         | map(attribute='item') | list }}
+    platform_outdated: "{{ platform_outdated_raw.stdout_lines }}"
 
-- name: Helm-репозитории
+- name: Helm-репозитории из Chart.yaml
   ansible.builtin.command: helm repo add {{ item | regex_replace('^https?://|/$', '') | regex_replace('[^a-zA-Z0-9]+', '-') }} {{ item }} --force-update
   loop: >-
     {{ query('ansible.builtin.file', *(platform_outdated | map('regex_replace', '^', platform_charts ~ '/')
@@ -22,6 +27,13 @@
        | map(attribute='repository') | select('match', '^https://') | unique }}
   changed_when: false
 
+# build берёт версии из Chart.lock. Если Chart.yaml изменён, а Chart.lock нет,
+# выполняется update: он пересоздаёт Chart.lock (закоммитьте его).
 - name: Загрузка зависимостей
-  ansible.builtin.command: helm dependency build {{ platform_charts }}/{{ item }}
+  ansible.builtin.shell: |
+    helm dependency build "$CHART" && exit 0
+    echo "Chart.lock устарел: helm dependency update $CHART"
+    helm dependency update "$CHART"
+  environment:
+    CHART: "{{ platform_charts }}/{{ item }}"
   loop: "{{ platform_outdated }}"

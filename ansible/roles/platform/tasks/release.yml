@@ -1,7 +1,25 @@
 ---
 # Установка или обновление релиза Helm из k8s/<chart> с values-<env>.yaml;
-# release.args — дополнительные аргументы helm.
-- name: "Helm: {{ release.name }}"
+# release.args — дополнительные аргументы helm. Команда выполняется в фоне,
+# каждые 15 с в терминале печатается время выполнения (callback_plugins/progress.py).
+
+# Helm не пересоздаёт Job с прежним содержимым: упавший Job (например,
+# миграции GitLab) удаляется, чтобы повторный up запустил его заново.
+- name: "Helm: {{ release.name }} — перезапуск упавших Job"
+  ansible.builtin.shell: |
+    kubectl get jobs -n "$NAMESPACE" -o json \
+      | jq -r --arg release "$RELEASE" '.items[]
+          | select(.metadata.annotations["meta.helm.sh/release-name"] == $release)
+          | select(any(.status.conditions[]?; .type == "Failed" and .status == "True"))
+          | .metadata.name' \
+      | xargs -r kubectl delete job -n "$NAMESPACE"
+  environment:
+    NAMESPACE: "{{ release.namespace | default(release.chart) }}"
+    RELEASE: "{{ release.name }}"
+  register: platform_failed_jobs
+  changed_when: platform_failed_jobs.stdout | length > 0
+
+- name: "Helm: {{ release.name }} (ход установки: kubectl get pods -n {{ release.namespace | default(release.chart) }})"
   ansible.builtin.command:
     argv: >-
       {{ ['helm', 'upgrade', '--install', release.name, platform_charts ~ '/' ~ release.chart,
@@ -11,3 +29,6 @@
           '--take-ownership', '--timeout', release.timeout | default('20m')]
          + (['--wait'] if release.wait | default(true) else [])
          + (release.args | default([])) }}
+  # Лимит фоновой задачи больше таймаута Helm, чтобы ошибку сообщил сам Helm.
+  async: "{{ ((release.timeout | default('20m') | regex_replace('m$', '') | int) + 5) * 60 }}"
+  poll: 15

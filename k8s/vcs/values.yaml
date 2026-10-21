@@ -39,9 +39,9 @@ gitlab:
       provider: nginx
       configureCertmanager: false
       annotations:
-        nginx.ingress.kubernetes.io/limit-rps: "20"
-        nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
-        nginx.ingress.kubernetes.io/limit-connections: "30"
+        nginx.ingress.kubernetes.io/limit-rps: "100"
+        nginx.ingress.kubernetes.io/limit-burst-multiplier: "10"
+        nginx.ingress.kubernetes.io/limit-connections: "300"
         nginx.ingress.kubernetes.io/proxy-body-size: "100m"
       tls:
         enabled: true

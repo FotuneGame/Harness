@@ -1,10 +1,16 @@
 apiVersion: v2
 name: gpu
-description: HAMi — распределение VRAM видеокарты между узлами и подами
+description: Доступ к видеокарте — HAMi (доли VRAM) или NVIDIA device plugin (WSL2)
 type: application
-version: 0.3.0
+version: 0.4.0
+# Ansible включает один из двух: HAMi в Ubuntu, NVIDIA device plugin в WSL2
+# (библиотека HAMi-core, ограничивающая VRAM, падает с CUDA из WSL2).
 dependencies:
   - name: hami
     version: 2.10.0
     repository: https://project-hami.github.io/HAMi/
     condition: hami.enabled
+  - name: nvidia-device-plugin
+    version: 0.20.1
+    repository: https://nvidia.github.io/k8s-device-plugin
+    condition: nvidia-device-plugin.enabled

@@ -1,15 +1,18 @@
 #!/bin/sh
 # Выполняется внутри pod vault-0; секреты передаются через stdin, а не аргументы.
+# Каждый шаг повторяем: при сбое настройку можно продолжить с root token.
 set -eu
 
+{% if platform_vault_keys is defined %}
 {% for key in platform_vault_keys[:3] %}
 vault operator unseal '{{ key }}' >/dev/null
 {% endfor %}
+{% endif %}
 export VAULT_TOKEN='{{ platform_vault_root }}'
 
-vault auth enable kubernetes
+vault auth list | grep -q '^kubernetes/' || vault auth enable kubernetes
 vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc
-vault secrets enable -path=kv kv-v2
+vault secrets list | grep -q '^kv/' || vault secrets enable -path=kv kv-v2
 
 # Роль Vault Secrets Operator на каждый namespace: чтение только своих путей.
 {% for namespace, secrets in platform_vault_secrets.items() %}
@@ -24,17 +27,21 @@ vault write auth/kubernetes/role/platform-{{ namespace }} \
   policies=platform-{{ namespace }} ttl=1h
 {% endfor %}
 
-# Пользователь admin (UI и CLI): управление секретами kv.
+# Пользователь admin (UI и CLI): управление секретами kv. Пароль задаётся
+# только при создании пользователя.
 vault policy write operator - <<'EOF'
 path "kv/data/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "kv/metadata/*" { capabilities = ["read", "list", "delete"] }
 EOF
-vault auth enable userpass
-printf '%s' '{{ platform_vault_admin_password }}' | vault write auth/userpass/users/admin password=- policies=operator
+vault auth list | grep -q '^userpass/' || vault auth enable userpass
+if ! vault read auth/userpass/users/admin >/dev/null 2>&1; then
+  printf '%s' '{{ platform_vault_admin_password }}' | vault write auth/userpass/users/admin password=- policies=operator
+  echo admin-created
+fi
 
-# Начальные значения секретов.
+# Начальные значения секретов: только для путей, которых ещё нет.
 {% for path, keys in platform_vault_seed.items() %}
-vault kv put -mount=kv {{ path }} - >/dev/null <<'EOF'
+vault kv get -mount=kv {{ path }} >/dev/null 2>&1 || vault kv put -mount=kv {{ path }} - >/dev/null <<'EOF'
 { {% for key, value in keys.items() %}{{ key | to_json }}: {{ (value if value is not none else lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits')) | to_json }}{{ ', ' if not loop.last }}{% endfor %} }
 EOF
 {% endfor %}

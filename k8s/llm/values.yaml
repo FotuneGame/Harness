@@ -1,4 +1,4 @@
-# Официального chart llama.cpp нет: StatefulSet/Service llama (templates/).
+# Официального chart llama.cpp нет: Deployment/Service/PVC llama (templates/).
 # Модель скачивается init-контейнером в PVC models-llama-0 (volumes/llm/llama).
 llama:
   image:
@@ -19,11 +19,12 @@ llama:
       memory: 2Gi
     limits:
       memory: 4Gi
-  # Включает Ansible, если на узле llms есть ресурс nvidia.com/gpu (HAMi);
-  # memoryMiB — VRAM узла llms из terraform/variables.tf.
+  # Включает Ansible, если на узле llms есть ресурс nvidia.com/gpu.
+  # memoryMiB — лимит VRAM через HAMi (доля узла llms из terraform/variables.tf);
+  # 0 — без лимита (WSL2, NVIDIA device plugin).
   gpu:
     enabled: false
-    memoryMiB: 4096
+    memoryMiB: 0
     layers: 99
     imageTag: server-cuda
   server:
@@ -41,7 +42,7 @@ perplexity:
   enabled: false
   image: ghcr.io/ggml-org/llama.cpp:full
   gpuImage: ghcr.io/ggml-org/llama.cpp:full-cuda
-  # VRAM для Job при GPU: сумма с llama.gpu.memoryMiB не больше VRAM узла llms.
+  # VRAM для Job при HAMi: сумма с llama.gpu.memoryMiB не больше доли узла llms.
   gpuMemoryMiB: 1024
   input: >-
     The quick brown fox jumps over the lazy dog. Language models predict

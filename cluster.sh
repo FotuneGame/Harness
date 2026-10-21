@@ -35,19 +35,24 @@ require_cluster() {
   cluster_exists || { echo "Кластер не создан: выполните ./cluster.sh up" >&2; exit 1; }
 }
 
+# apt ждёт освобождения блокировки (после старта WSL её держит unattended-upgrades).
+apt_get() { sudo apt-get -o DPkg::Lock::Timeout=600 "$@"; }
+
 install_ansible() {
   if ! command -v ansible-playbook >/dev/null; then
     log "Установка Ansible"
-    sudo apt-get update
-    sudo apt-get install -y software-properties-common
-    sudo add-apt-repository -y --update ppa:ansible/ansible
-    sudo apt-get install -y ansible
+    apt_get update
+    apt_get install -y software-properties-common
+    sudo add-apt-repository -y ppa:ansible/ansible
+    apt_get update
+    apt_get install -y ansible
   fi
   ansible-doc community.general.ini_file >/dev/null 2>&1 \
     || ansible-galaxy collection install community.general
 }
 
-playbook() { ansible-playbook -i ansible/inventory.ini "$@"; }
+# Вывод с ходом долгих задач: ansible/callback_plugins/progress.py.
+playbook() { ANSIBLE_STDOUT_CALLBACK=progress ansible-playbook -i ansible/inventory.ini "$@"; }
 
 # Узлы создаёт Terraform; остановленный кластер запускается с прежними параметрами.
 provision() {
@@ -72,7 +77,13 @@ cmd_up() {
 
   log "Ansible: подготовка сервера"
   local become=()
-  sudo -n -k true 2>/dev/null || become=(--ask-become-pass)
+  # Ubuntu 25.10+: sudo — это sudo-rs, его запрос пароля Ansible не распознаёт.
+  # Тогда become идёт через классический sudo (sudo.ws из пакета sudo).
+  if [[ $(readlink -f "$(command -v sudo)") == */cargo/* ]]; then
+    command -v sudo.ws >/dev/null || apt_get install -y sudo
+    become+=(-e ansible_become_exe=sudo.ws)
+  fi
+  sudo -n -k true 2>/dev/null || become+=(--ask-become-pass)
   playbook ansible/host.yml "${become[@]}"
 
   provision
@@ -154,11 +165,54 @@ ports_status() {
   fi
 }
 
+# Узлы: метка platform.node, потребление (metrics-server), готовые поды и namespace.
+nodes_status() {
+  local pods top
+  pods=$(kubectl get pods -A -o json)
+  top=$(kubectl top nodes --no-headers 2>/dev/null || true)
+  {
+    echo "УЗЕЛ МЕТКА CPU RAM ПОДЫ NAMESPACE"
+    kubectl get nodes -o json | jq -r '.items[] | [.metadata.name, .metadata.labels["platform.node"] // "-"] | @tsv' |
+      while IFS=$'\t' read -r node label; do
+        usage=$(awk -v node="$node" '$1 == node { print $2, $4 }' <<<"$top")
+        pods_on_node=$(jq -r --arg node "$node" '
+          [.items[] | select(.spec.nodeName == $node)
+            | select(.status.phase != "Failed" or all(.metadata.ownerReferences[]?; .kind != "ReplicaSet"))]
+          | "\(map(select(.status.phase == "Succeeded" or ((.status.containerStatuses // []) | length > 0 and all(.ready)))) | length)/\(length)"
+            + " \(map(.metadata.namespace) | unique | join(","))"' <<<"$pods")
+        echo "$node $label ${usage:-- -} $pods_on_node"
+      done
+  } | column -t
+}
+
+# Поды, которые не готовы: узел и причина (ожидание контейнера, ошибка, фаза).
+# Упавшие поды Deployment (например, после перезапуска узла) не показываются:
+# вместо них уже создан новый под.
+pods_not_ready() {
+  local rows
+  rows=$(kubectl get pods -A -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded")
+    | select(.status.phase != "Failed" or all(.metadata.ownerReferences[]?; .kind != "ReplicaSet"))
+    | select(((.status.containerStatuses // []) | length == 0) or any(.status.containerStatuses[]; .ready | not))
+    | [.metadata.namespace + "/" + .metadata.name, .spec.nodeName // "-",
+       ((.status.containerStatuses // []) | map(.state.waiting.reason // .state.terminated.reason // empty) | .[0])
+         // .status.reason // .status.phase] | @tsv')
+  if [ -z "$rows" ]; then
+    echo "Все поды готовы."
+  else
+    echo "Не готовы:"
+    { echo "ПОД УЗЕЛ ПРИЧИНА"; echo "$rows"; } | column -t
+  fi
+}
+
 cmd_status() {
   minikube status --profile "$PROFILE" || true
   if cluster_running; then
-    kubectl get nodes -L platform.node
-    kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
+    log "Узлы"
+    nodes_status
+    log "Поды"
+    pods_not_ready
+    echo
     echo "Vault: initialized=$(vault_status initialized), sealed=$(vault_status sealed)"
   fi
   ports_status

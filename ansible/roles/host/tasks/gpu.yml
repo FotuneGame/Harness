@@ -29,6 +29,7 @@
       ansible.builtin.apt:
         name: nvidia-container-toolkit
         update_cache: true
+        lock_timeout: 600
 
     - name: Runtime NVIDIA в Docker
       ansible.builtin.shell: |

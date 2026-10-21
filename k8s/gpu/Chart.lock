@@ -2,5 +2,8 @@ dependencies:
 - name: hami
   repository: https://project-hami.github.io/HAMi/
   version: 2.10.0
-digest: sha256:6ca8df5b1d4df767c075516582fc227eb1490aec4bddcf95491ee6ae2c3a9ca4
-generated: "2026-10-20T16:19:23.506300106+03:00"
+- name: nvidia-device-plugin
+  repository: https://nvidia.github.io/k8s-device-plugin
+  version: 0.20.1
+digest: sha256:adfb9db44bb14dbf3bd61189182cf42a541802b6f9fa05193e296ebe83b6fa9c
+generated: "2026-10-21T10:39:11.181241035+03:00"

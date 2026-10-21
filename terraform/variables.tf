@@ -60,6 +60,12 @@ variable "gpu" {
   default     = true
 }
 
+variable "registry_mirrors" {
+  description = "Зеркала Docker Hub для узлов: прямая загрузка с Docker Hub очень медленная. Образ, которого нет в зеркале, скачивается с Docker Hub."
+  type        = list(string)
+  default     = ["https://mirror.gcr.io"]
+}
+
 variable "kubernetes_version" {
   description = "Версия Kubernetes; Ansible ставит kubectl этой же версии."
   type        = string

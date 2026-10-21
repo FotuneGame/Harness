@@ -1,6 +1,8 @@
 # Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/.
+# разрешает образы вне bitnami/. Реестр docker.io (а не registry-1.docker.io),
+# чтобы образы шли через зеркало Docker Hub (terraform/variables.tf, registry_mirrors).
 global:
+  imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
@@ -16,6 +18,17 @@ postgresql:
     secretKeys:
       adminPasswordKey: password
   primary:
+    # GitLab создаёт схему базы одной транзакцией с тысячами таблиц и партиций:
+    # стандартных 64 блокировок не хватает (ERROR: out of shared memory).
+    extendedConfiguration: |
+      max_locks_per_transaction = 512
+    # Восстановление после сбоя на медленном диске (volumes/ в WSL) занимает
+    # минуты: liveness-проба не должна прерывать запуск. Ждём до 10 минут.
+    startupProbe:
+      enabled: true
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 60
     nodeSelector:
       platform.node: core
     persistence:
@@ -135,8 +148,11 @@ elasticsearch:
     replicaCount: 0
   ingest:
     enabled: false
+  # Версионные образы os-shell есть только в bitnamilegacy/.
   volumePermissions:
     enabled: true
+    image:
+      repository: bitnamilegacy/os-shell
 
 # Deployment/Service pgadmin, PVC pgadmin.
 pgadmin4:

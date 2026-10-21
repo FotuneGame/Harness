@@ -49,7 +49,9 @@ spec:
           resources:
             limits:
               nvidia.com/gpu: 1
+              {{- if .Values.llama.gpu.memoryMiB }}
               nvidia.com/gpumem: {{ .Values.perplexity.gpuMemoryMiB }}
+              {{- end }}
           {{- end }}
           volumeMounts:
             - name: models

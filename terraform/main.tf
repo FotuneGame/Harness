@@ -21,6 +21,14 @@ locals {
     "ValidatingAdmissionWebhook", "ResourceQuota", "PodNodeSelector", "PodTolerationRestriction",
   ])
 
+  # Параметры компонентов Kubernetes. kubelet по умолчанию скачивает образы по
+  # одному: при медленном Docker Hub один большой образ задерживает все поды узла.
+  extra_config = [
+    "apiserver.encryption-provider-config=${local.encryption_config}",
+    "apiserver.enable-admission-plugins=${local.admission_plugins}",
+    "kubelet.serialize-image-pulls=false",
+  ]
+
   allocated = {
     cpus       = sum([for node in values(var.nodes) : node.cpus])
     memory_gib = sum([for node in values(var.nodes) : node.memory_gib])
@@ -35,6 +43,8 @@ locals {
     core               = [var.nodes.core.cpus, var.nodes.core.memory_gib, var.nodes.core.disk_gib]
     gpu                = var.gpu
     kubernetes_version = var.kubernetes_version
+    registry_mirrors   = var.registry_mirrors
+    extra_config       = local.extra_config
   }
 
   # Всё, что нужно Ansible: Terraform — единственный источник параметров железа.
@@ -56,8 +66,8 @@ locals {
   }
 }
 
-# Кластер Minikube (драйвер docker). Изменение числа узлов, ресурсов core, GPU
-# или версии Kubernetes пересоздаёт кластер; данные в volumes/ сохраняются.
+# Кластер Minikube (драйвер docker). Изменение числа узлов, ресурсов core, GPU,
+# зеркал или версии Kubernetes пересоздаёт кластер; данные в volumes/ сохраняются.
 resource "terraform_data" "cluster" {
   triggers_replace = local.cluster_shape
   input            = local.profile
@@ -90,8 +100,8 @@ resource "terraform_data" "cluster" {
         --cpus ${var.nodes.core.cpus} --memory ${var.nodes.core.memory_gib}g \
         --disk-size ${var.nodes.core.disk_gib}g \
         --mount --mount-string "${local.volumes}:/volumes" \
-        --extra-config apiserver.encryption-provider-config=${local.encryption_config} \
-        --extra-config apiserver.enable-admission-plugins=${local.admission_plugins} \
+        ${join(" ", [for mirror in var.registry_mirrors : "--registry-mirror ${mirror}"])} \
+        ${join(" ", [for option in local.extra_config : "--extra-config ${option}"])} \
         --addons metrics-server "$${gpus[@]}"
     EOT
   }

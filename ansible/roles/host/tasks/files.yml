@@ -105,4 +105,5 @@
     path: /etc/hosts
     marker: "# {mark} platform"
     insertbefore: BOF
-    block: "127.0.0.1 {{ host_hostnames | join(' ') }}"
+    # По одному имени в строке (так же, как в hosts Windows).
+    block: "{{ host_hostnames | map('regex_replace', '^', '127.0.0.1 ') | join('\n') }}"

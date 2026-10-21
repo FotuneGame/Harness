@@ -9,9 +9,10 @@ argo-cd:
   configs:
     cm:
       url: https://argocd.local
-  server:
-    # TLS завершается на ingress.
-    insecure: true
+    # TLS завершается на ingress: сервер отдаёт HTTP, без перенаправления на
+    # HTTPS (иначе ERR_TOO_MANY_REDIRECTS).
+    params:
+      server.insecure: true
 
 # Kyverno применяет политики к подам приложений (k8s/app): монтирует папку
 # volumes/app/<приложение>. Нужен только admission controller.

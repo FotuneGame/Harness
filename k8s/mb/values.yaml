@@ -1,6 +1,8 @@
 # Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/.
+# разрешает образы вне bitnami/. Реестр docker.io (а не registry-1.docker.io),
+# чтобы образы шли через зеркало Docker Hub (terraform/variables.tf, registry_mirrors).
 global:
+  imageRegistry: docker.io
   security:
     allowInsecureImages: true
 

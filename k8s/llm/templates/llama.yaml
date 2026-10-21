@@ -1,13 +1,16 @@
 {{- $model := include "llama.modelFile" . -}}
 {{- $gpu := .Values.llama.gpu -}}
 {{- $server := .Values.llama.server -}}
+# Deployment со стратегией Recreate: под всегда заменяется новым, даже если
+# прежний не запустился (StatefulSet в этом случае останавливает обновление).
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: llama
 spec:
-  serviceName: llama
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: llama
@@ -78,7 +81,9 @@ spec:
               {{- toYaml .Values.llama.resources.limits | nindent 14 }}
               {{- if $gpu.enabled }}
               nvidia.com/gpu: 1
+              {{- if $gpu.memoryMiB }}
               nvidia.com/gpumem: {{ $gpu.memoryMiB }}
+              {{- end }}
               {{- end }}
           readinessProbe:
             httpGet:
@@ -95,15 +100,22 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /models
-  volumeClaimTemplates:
-    - metadata:
-        name: models
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: local
-        resources:
-          requests:
-            storage: {{ .Values.llama.storage }}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-llama-0
+---
+# Модели в volumes/llm/llama: PV pv-llm-llama заранее привязан к этому PVC.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models-llama-0
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local
+  resources:
+    requests:
+      storage: {{ .Values.llama.storage }}
 ---
 apiVersion: v1
 kind: Service

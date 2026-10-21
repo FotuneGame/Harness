@@ -59,16 +59,38 @@ Minikube из трёх узлов. Terraform создаёт узлы, Ansible у
 kubectl port-forward -n db svc/postgresql 5432:5432
 ```
 
+Доверие к HTTPS-сертификату `*.local` (один раз после первого `up`, затем
+перезапустите браузер). Windows 11, из терминала WSL в корне репозитория:
+
+```bash
+certutil.exe -user -addstore Root "$(wslpath -w volumes/proxy/tls/ca.crt)"
+```
+
+Ubuntu:
+
+```bash
+sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt && sudo update-ca-certificates
+```
+
 ## Важно
 
 - Первый `up` может остановиться с просьбой выполнить `wsl.exe --shutdown` (WSL:
   `metadata` в `/etc/wsl.conf`, 32 ГБ в `.wslconfig`) или перелогиниться (Ubuntu:
   группа `docker`). После этого повторите `./cluster.sh up`. Hosts Windows
   обновляется через запрос UAC.
+- Образы Docker Hub скачиваются через зеркало `mirror.gcr.io` (напрямую Docker Hub
+  отдаёт их очень медленно); список зеркал — `registry_mirrors` в
+  `terraform/variables.tf`. Первый `up` всё равно долгий: образов около 10 ГБ.
+  Если `up` упал с `context deadline exceeded`, образы ещё качаются — загрузка
+  продолжается в кластере, просто повторите `./cluster.sh up` позже.
+- Ошибка «Docker недоступен» в WSL: запустите Docker Desktop, дождитесь
+  «Engine running», включите Settings → Resources → WSL integration →
+  переключатель вашего дистрибутива (например, Ubuntu) → Apply & restart.
+  Откройте WSL заново, проверьте `docker info` и повторите `./cluster.sh up`.
 - При первом `up` выводятся 5 unseal key Vault и пароль пользователя `admin` —
   сохраните их, повторно они не показываются. После каждого запуска Vault
   запечатан: `start`, `up` и `unseal` просят 3 ключа.
-- Пароли сервисов генерируются в Vault: https://vault.local, метод Username,
+- Пароли сервисов генерируются в Vault: https://vault.local, метод Userpass,
   `admin`. Пути: `db/postgresql`, `db/pgadmin` (вход `admin@example.com`),
   `db/redis`, `db/clickhouse`, `vcs/gitlab-root` (вход `root`), `acl/keycloak`
   (`admin`), `backup/minio`, `logs/grafana`. Пароль Argo CD (`admin`):
@@ -78,9 +100,11 @@ kubectl port-forward -n db svc/postgresql 5432:5432
   без него Runner выключен), `cicd/argocd-gitlab` (`type=git`,
   `url=http://gitlab-webservice-default.vcs.svc.cluster.local:8181/<группа>`,
   `username`, `password` — PAT с `read_repository`).
-- HTTPS: добавьте `volumes/proxy/tls/ca.crt` в доверенные (CA действует только
-  для `*.local`). Windows: `certutil.exe -user -addstore Root "$(wslpath -w volumes/proxy/tls/ca.crt)"`;
-  Ubuntu: `sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt && sudo update-ca-certificates`.
+- https://registry.local — API Container Registry без веб-интерфейса (в браузере
+  пустая страница): `docker login registry.local`, образы видны в GitLab
+  (проект → Deploy → Container Registry).
+- HTTPS: без доверия к `volumes/proxy/tls/ca.crt` (команды выше) браузер
+  показывает предупреждение о сертификате. CA действует только для имён `*.local`.
 - `ports open 0.0.0.0` открывает сервисы в сеть; Prometheus, Alertmanager,
   Jaeger, Kafka UI и RedisInsight работают без авторизации.
 - Данные хранятся в `volumes/` (в Git не попадают). Удаляйте каталог только
@@ -95,9 +119,11 @@ kubectl port-forward -n db svc/postgresql 5432:5432
   `terraform/variables.tf` пересоздаёт кластер при `up`; ресурсы `llms`/`apps`
   и VRAM меняются без пересоздания.
 - VRAM: доли узлов — `nodes.*.vram_mib` в `terraform/variables.tf` (сумма не
-  больше 4096 МиБ), затем `./cluster.sh up`. HAMi ограничивает VRAM подов: под
-  запрашивает `nvidia.com/gpu: 1` и `nvidia.com/gpumem: <МиБ>`. Образы с
-  `NVIDIA_VISIBLE_DEVICES=all` без запроса GPU обходят ограничение.
+  больше 4096 МиБ), затем `./cluster.sh up`. GPU получают только узлы с долей.
+  В Ubuntu HAMi ограничивает VRAM подов: под запрашивает `nvidia.com/gpu: 1` и
+  `nvidia.com/gpumem: <МиБ>`; образы с `NVIDIA_VISIBLE_DEVICES=all` без запроса
+  GPU обходят ограничение. В WSL2 VRAM не ограничивается (библиотека HAMi
+  несовместима с CUDA в WSL2): под запрашивает только `nvidia.com/gpu: 1`.
 - GPU: в Ubuntu нужен драйвер NVIDIA (Container Toolkit ставится
   автоматически). Если GPU недоступен (часто в WSL2), llama.cpp работает на CPU.
 - Отличия окружений — в `k8s/<chart>/values-<env>.yaml`, общие значения — в

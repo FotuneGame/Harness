@@ -1,8 +1,11 @@
-# HAMi делит одну видеокарту между узлами и подами: поды запрашивают
-# nvidia.com/gpu: 1 и nvidia.com/gpumem (МиБ), HAMi ограничивает им VRAM.
-# Доли узлов задаются в terraform/variables.tf (nodes.*.vram_mib); Ansible
-# передаёт их в hami.devicePlugin.nodeConfiguration.config.
+# Видеокарта доступна только узлам с долей VRAM (terraform/variables.tf,
+# nodes.*.vram_mib; метку platform.gpu=on ставит Terraform). Ansible включает:
+#   hami — Ubuntu: поды запрашивают nvidia.com/gpu: 1 и nvidia.com/gpumem (МиБ),
+#          HAMi ограничивает им VRAM; доли узлов передаются в
+#          hami.devicePlugin.nodeConfiguration.config;
+#   nvidia-device-plugin — WSL2: только доступ к GPU, без ограничения VRAM.
 hami:
+  enabled: true
   fullnameOverride: hami
   scheduler:
     nodeSelector:
@@ -23,10 +26,21 @@ hami:
       nodeSelector:
         platform.node: core
   devicePlugin:
-    # Только узлы с выделенной VRAM (метку platform.gpu=on ставит Terraform).
+    # null убирает метку gpu=on из значений chart по умолчанию.
     nvidiaNodeSelector:
+      gpu: null
       platform.gpu: "on"
     tolerations:
       - operator: Exists
     service:
       type: ClusterIP
+
+nvidia-device-plugin:
+  enabled: false
+  fullnameOverride: nvidia-device-plugin
+  nodeSelector:
+    platform.gpu: "on"
+  # По умолчанию chart требует метки Node Feature Discovery, которых в minikube нет.
+  affinity: null
+  tolerations:
+    - operator: Exists

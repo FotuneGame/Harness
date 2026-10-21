@@ -37,38 +37,79 @@
       loop: "{{ platform_unseal_keys.results }}"
       no_log: true
 
-# Первый запуск: 5 unseal keys (порог 3), политики и роли для Vault Secrets
-# Operator, пользователь admin и сгенерированные секреты. Root token отзывается.
-- name: Первичная настройка Vault
-  when: not platform_vault.initialized
+# Настройка хранится в данных Vault (volumes/secret) и переживает пересоздание
+# кластера. Признак готовности — Secret, который Vault Secrets Operator получил
+# из Vault. Если его нет, настройка прервалась и продолжается с root token.
+- name: Признак завершённой настройки Vault
+  ansible.builtin.command: kubectl get secret -n {{ platform_required_secrets.split() | first | replace('/', ' ') }}
+  changed_when: false
+  failed_when: false
+  register: platform_vault_configured
+  until: platform_vault_configured.rc == 0
+  retries: 12
+  delay: 10
+  when: platform_vault.initialized
+
+- name: Настройка Vault
+  when: not platform_vault.initialized or platform_vault_configured.rc != 0
   block:
+    # Первый запуск: 5 unseal keys (порог 3).
     - name: Инициализация Vault
       ansible.builtin.command: kubectl exec -n secret vault-0 -- vault operator init -format=json
       register: platform_vault_init
       no_log: true
+      when: not platform_vault.initialized
 
-    - name: Ключи Vault и пароль admin
+    - name: Ключи Vault
       ansible.builtin.set_fact:
         platform_vault_keys: "{{ (platform_vault_init.stdout | from_json).unseal_keys_b64 }}"
         platform_vault_root: "{{ (platform_vault_init.stdout | from_json).root_token }}"
-        platform_vault_admin_password: "{{ lookup('ansible.builtin.password', '/dev/null length=24 chars=ascii_letters,digits') }}"
       no_log: true
+      when: not platform_vault.initialized
 
-    - name: Сохраните ключи Vault (показываются один раз)
+    - name: Сохраните unseal keys (показываются один раз)
       ansible.builtin.debug:
         msg:
           - "Unseal keys (любые 3 из 5 нужны после каждого запуска кластера):"
           - "{{ platform_vault_keys }}"
-          - "Vault UI https://vault.local: метод Username, пользователь admin, пароль {{ platform_vault_admin_password }}"
+      when: not platform_vault.initialized
 
+    - name: Ввод root token для продолжения настройки
+      ansible.builtin.pause:
+        prompt: "Настройка Vault не была завершена. Введите root token из сообщения об ошибке"
+        echo: false
+      register: platform_vault_root_input
+      no_log: true
+      when: platform_vault.initialized
+
+    - name: Root token из ввода
+      ansible.builtin.set_fact:
+        platform_vault_root: "{{ platform_vault_root_input.user_input | trim }}"
+      no_log: true
+      when: platform_vault.initialized
+
+    - name: Пароль admin
+      ansible.builtin.set_fact:
+        platform_vault_admin_password: "{{ lookup('ansible.builtin.password', '/dev/null length=24 chars=ascii_letters,digits') }}"
+      no_log: true
+
+    # Политики, роли Vault Secrets Operator, пользователь admin, сгенерированные
+    # секреты; root token в конце отзывается.
     - name: Разблокировка и настройка Vault
       ansible.builtin.command:
         argv: [kubectl, exec, -i, -n, secret, vault-0, --, sh, -s]
         stdin: "{{ lookup('ansible.builtin.template', 'vault-init.sh.j2') }}"
+      register: platform_vault_setup
       no_log: true
+
+    - name: Пароль пользователя admin (показывается один раз)
+      ansible.builtin.debug:
+        msg: "Vault UI https://vault.local: метод Userpass, пользователь admin, пароль {{ platform_vault_admin_password }}"
+      when: "'admin-created' in platform_vault_setup.stdout"
   rescue:
     - name: Ошибка настройки Vault
       ansible.builtin.fail:
         msg: >-
-          Настройка Vault не завершена. Root token для ручного исправления:
-          {{ platform_vault_root | default('не получен') }}. После исправления повторите ./cluster.sh up.
+          Настройка Vault не завершена{{ ': ' ~ (platform_vault_setup.stderr | default('') | trim) if platform_vault_setup.stderr | default('') }}.
+          Root token для продолжения: {{ platform_vault_root | default('не получен') }}.
+          Повторите ./cluster.sh up — он спросит этот token.

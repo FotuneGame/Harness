@@ -28,10 +28,12 @@ routes:
 extraHosts: [gitlab.local]
 
 # Аннотации маршрутов без собственных annotations: ограничение частоты запросов.
+# Веб-интерфейсы при открытии загружают сотни файлов параллельно (HTTP/2),
+# поэтому лимиты рассчитаны на это, а не на единицы запросов.
 annotations:
-  nginx.ingress.kubernetes.io/limit-rps: "20"
-  nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
-  nginx.ingress.kubernetes.io/limit-connections: "30"
+  nginx.ingress.kubernetes.io/limit-rps: "100"
+  nginx.ingress.kubernetes.io/limit-burst-multiplier: "10"
+  nginx.ingress.kubernetes.io/limit-connections: "300"
   nginx.ingress.kubernetes.io/proxy-body-size: "100m"
 
 # Secret с сертификатом *.local создаёт Ansible в каждом namespace маршрутов и vcs.

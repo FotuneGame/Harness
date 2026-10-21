@@ -6,7 +6,8 @@
 
 - name: Проверка, что у каждого обязательного секрета есть начальное значение
   ansible.builtin.assert:
-    that: missing | trim | length == 0
+    # Пустой результат шаблона ansible-core превращает в None.
+    that: missing | default('', true) | trim | length == 0
     fail_msg: "Нет значений в platform_vault_seed для: {{ missing }}"
   vars:
     missing: >-
@@ -34,6 +35,21 @@
   changed_when: false
   register: platform_apiserver
   failed_when: "'encryption-provider-config' not in platform_apiserver.stdout"
+
+# Пока сеть подов (kindnet) не готова, kubelet пересоздаёт sandbox подов и
+# перезапускает их контейнеры: сервисы ставятся после готовности сети и DNS.
+- name: Ожидание сети подов
+  ansible.builtin.command: kubectl wait pod -n kube-system -l app=kindnet --for=condition=Ready --timeout=15m
+  changed_when: false
+
+# coredns, запущенный до сети подов, уходит в CrashLoopBackOff с паузами до
+# 5 минут: если он не готов, перезапускаем его, а не ждём.
+- name: Ожидание DNS кластера
+  ansible.builtin.shell: |
+    kubectl wait pod -n kube-system -l k8s-app=kube-dns --for=condition=Ready --timeout=2m && exit 0
+    kubectl rollout restart deployment/coredns -n kube-system
+    kubectl rollout status deployment/coredns -n kube-system --timeout=10m
+  changed_when: false
 
 - name: Зависимости charts
   ansible.builtin.include_tasks: dependencies.yml
