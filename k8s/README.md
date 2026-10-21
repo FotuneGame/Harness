@@ -21,7 +21,7 @@ k8s/<chart>/
 |---|---|---|---|
 | `foundation` | default | `platform-foundation` | Namespace, StorageClass `local`, PersistentVolume |
 | `secret` | secret | `platform-secret` | Vault, Vault Secrets Operator, синхронизация секретов |
-| `proxy` | proxy | `platform-proxy` | NGINX Ingress, маршруты `*.local` |
+| `proxy` | proxy | `platform-proxy` | NGINX Ingress, маршруты `*.local`, DaemonSet `node-hosts` (имена `*.local` и CA для Docker узлов) |
 | `gpu` | kube-system | `platform-gpu` | HAMi (Ubuntu, лимиты VRAM) или NVIDIA device plugin (WSL2) |
 | `db` | db | `platform-db` | PostgreSQL, pgAdmin, Redis, RedisInsight, ClickHouse, Elasticsearch |
 | `mb` | mb | `platform-mb` | Kafka, Kafka UI |
@@ -164,4 +164,5 @@ k8s/<chart>/
 - { host: mongo.local, namespace: db, service: mongo-express, port: 8081 }
 ```
 
-`./cluster.sh up` сам пропишет имя в hosts и перевыпустит TLS-сертификат.
+`./cluster.sh up` сам пропишет имя в hosts, CoreDNS и `/etc/hosts` узлов и
+перевыпустит TLS-сертификат.

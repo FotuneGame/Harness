@@ -12,6 +12,7 @@ kube-prometheus-stack:
         smtp_from: infra-alerts@example.com
         smtp_hello: devops.local
         smtp_require_tls: true
+        # Логин (smtp_auth_username) — из Vault, его передаёт Ansible.
       route:
         group_by: [alertname, namespace]
         group_wait: 30s
@@ -25,7 +26,6 @@ kube-prometheus-stack:
           email_configs:
             - to: infra-alerts@example.com
               send_resolved: true
-              auth_username: infra-alerts@example.com
               auth_password_file: /etc/alertmanager/secrets/smtp-credentials/password
     alertmanagerSpec:
       nodeSelector:
@@ -50,6 +50,8 @@ kube-prometheus-stack:
     fullnameOverride: logs-grafana
     admin:
       existingSecret: grafana-credentials
+      userKey: username
+      passwordKey: password
     nodeSelector:
       platform.node: core
     persistence:
@@ -249,7 +251,9 @@ prometheus-postgres-exporter:
     datasource:
       host: postgresql.db.svc.cluster.local
       database: postgres
-      user: postgres_exporter
+      userSecret:
+        name: postgres-exporter-credentials
+        key: username
       passwordSecret:
         name: postgres-exporter-credentials
         key: password

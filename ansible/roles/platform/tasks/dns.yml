@@ -1,0 +1,38 @@
+---
+# Имена *.local внутри кластера. CoreDNS направляет их на Service ingress (поды,
+# задачи GitLab Runner). CA *.local нужен узлам (DaemonSet node-hosts из
+# k8s/proxy: Docker узла скачивает образы registry.local) и задачам Runner.
+- name: CA *.local в namespace
+  ansible.builtin.shell: >-
+    kubectl create configmap {{ platform_proxy_values.caConfigMap }} --namespace {{ item }}
+    --from-file=ca.crt={{ platform_tls_dir }}/ca.crt
+    --dry-run=client -o yaml | kubectl apply -f -
+  loop: "{{ platform_ca_namespaces }}"
+  register: platform_ca_configmap
+  changed_when: "'unchanged' not in platform_ca_configmap.stdout"
+
+# Блок между метками заменяется при каждом up. minikube и kubeadm при запуске
+# кластера ConfigMap coredns не перезаписывают, CoreDNS перечитывает его сам (reload).
+- name: Имена *.local в CoreDNS
+  ansible.builtin.shell: |
+    set -euo pipefail
+    corefile=$(kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}')
+    patched=$(printf '%s\n' "$corefile" | awk '
+      /# BEGIN platform/ { skip = 1 }
+      skip { if (/# END platform/) skip = 0; next }
+      { print }
+      /^\.:53 \{/ { print ENVIRON["BLOCK"] }')
+    [ "$patched" = "$corefile" ] && exit 0
+    kubectl patch configmap coredns -n kube-system --type merge \
+      -p "$(jq -n --arg corefile "$patched"$'\n' '{data: {Corefile: $corefile}}')" >/dev/null
+    echo changed
+  args:
+    executable: /bin/bash
+  environment:
+    BLOCK: "{{ (['# BEGIN platform (ansible/roles/platform/tasks/dns.yml)']
+      + platform_hostnames | map('regex_replace', '^', 'rewrite name exact ')
+        | map('regex_replace', '$', ' ' + platform_ingress_service) | list
+      + ['# END platform'])
+      | map('regex_replace', '^', '    ') | join('\n') }}"
+  register: platform_coredns
+  changed_when: "'changed' in platform_coredns.stdout"

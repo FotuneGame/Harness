@@ -81,8 +81,9 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
 - Образы Docker Hub скачиваются через зеркало `mirror.gcr.io` (напрямую Docker Hub
   отдаёт их очень медленно); список зеркал — `registry_mirrors` в
   `terraform/variables.tf`. Первый `up` всё равно долгий: образов около 10 ГБ.
-  Если `up` упал с `context deadline exceeded`, образы ещё качаются — загрузка
-  продолжается в кластере, просто повторите `./cluster.sh up` позже.
+  Пока образы и модель llama.cpp скачиваются, `up` продолжает ждать (до 12
+  повторов таймаута на релиз) и падает только при настоящей ошибке; после
+  сбоя загрузку можно продолжить повторным `./cluster.sh up`.
 - Ошибка «Docker недоступен» в WSL: запустите Docker Desktop, дождитесь
   «Engine running», включите Settings → Resources → WSL integration →
   переключатель вашего дистрибутива (например, Ubuntu) → Apply & restart.
@@ -90,19 +91,44 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
 - При первом `up` выводятся 5 unseal key Vault и пароль пользователя `admin` —
   сохраните их, повторно они не показываются. После каждого запуска Vault
   запечатан: `start`, `up` и `unseal` просят 3 ключа.
-- Пароли сервисов генерируются в Vault: https://vault.local, метод Userpass,
-  `admin`. Пути: `db/postgresql`, `db/pgadmin` (вход `admin@example.com`),
-  `db/redis`, `db/clickhouse`, `vcs/gitlab-root` (вход `root`), `acl/keycloak`
-  (`admin`), `backup/minio`, `logs/grafana`. Пароль Argo CD (`admin`):
-  `kubectl -n cicd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
-- Задаются вручную в Vault, затем `./cluster.sh up`: `logs/smtp` (`password` для
-  Alertmanager), `cicd/gitlab-runner` (`runner-token`, `runner-registration-token`;
-  без него Runner выключен), `cicd/argocd-gitlab` (`type=git`,
-  `url=http://gitlab-webservice-default.vcs.svc.cluster.local:8181/<группа>`,
-  `username`, `password` — PAT с `read_repository`).
+- Логины и пароли — в Vault: https://vault.local, метод Userpass, пользователь
+  `admin`. Каждый путь хранит ключи `username` (логин) и `password` (пароль).
+  - Создаются автоматически при первом `up`: `db/pgadmin`, `db/postgresql`,
+    `db/redis`, `db/clickhouse`, `vcs/gitlab-root`, `acl/keycloak`,
+    `backup/minio`, `logs/grafana`, `cicd/argocd` и др. (список —
+    `platform_vault_seed` в `ansible/roles/platform/defaults/main.yml`).
+    Изменение в Vault позже не меняет уже созданные учётные записи; исключение —
+    пароль Argo CD, он применяется при следующем `up`.
+  - Заполняются вручную, затем `./cluster.sh up`:
+    - `logs/smtp` — почта для оповещений Alertmanager (замените `password`);
+    - `cicd/gitlab-runner` — `runner-token` и `runner-registration-token`
+      (пока пути нет, GitLab Runner выключен);
+    - `cicd/argocd-gitlab` — доступ Argo CD к репозиториям GitLab: `type=git`,
+      `url=http://gitlab-webservice-default.vcs.svc.cluster.local:8181/<группа>`,
+      `username` и `password` (personal access token с `read_repository`).
 - https://registry.local — API Container Registry без веб-интерфейса (в браузере
   пустая страница): `docker login registry.local`, образы видны в GitLab
   (проект → Deploy → Container Registry).
+- Внутри кластера registry доступен по тому же адресу `registry.local`:
+  - поды и узлы находят его сами, а узлы доверяют его сертификату, поэтому
+    образы `registry.local/...` скачиваются без дополнительной настройки
+    (настраивает DaemonSet `node-hosts` в namespace `proxy`);
+  - в задачах GitLab CI сертификат CA лежит в
+    `/etc/docker/certs.d/registry.local/ca.crt`, вход —
+    `docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"`;
+  - собирайте образы в CI через kaniko с
+    `--registry-certificate registry.local=/etc/docker/certs.d/registry.local/ca.crt`:
+    docker-in-docker не работает, задачи запускаются без привилегий.
+- Образ из registry в приложении Argo CD: создайте в GitLab deploy token
+  (проект или группа → Settings → Repository → Deploy tokens, scope
+  `read_registry`) и Secret в namespace `app`, затем укажите в поде
+  `imagePullSecrets: [{ name: gitlab-registry }]` и образ
+  `registry.local/<группа>/<проект>:<тег>`:
+
+  ```bash
+  kubectl create secret docker-registry gitlab-registry -n app --docker-server=registry.local \
+    --docker-username=<имя deploy token> --docker-password=<deploy token>
+  ```
 - HTTPS: без доверия к `volumes/proxy/tls/ca.crt` (команды выше) браузер
   показывает предупреждение о сертификате. CA действует только для имён `*.local`.
 - `ports open 0.0.0.0` открывает сервисы в сеть; Prometheus, Alertmanager,

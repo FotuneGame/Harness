@@ -39,28 +39,40 @@ postgresql:
         cpu: 250m
         memory: 512Mi
     extraEnvVars:
+      - name: GITLAB_DB_USER
+        valueFrom:
+          secretKeyRef: { name: gitlab-db-credentials, key: username }
       - name: GITLAB_DB_PASSWORD
         valueFrom:
           secretKeyRef: { name: gitlab-db-credentials, key: password }
+      - name: KEYCLOAK_DB_USER
+        valueFrom:
+          secretKeyRef: { name: keycloak-db-credentials, key: username }
       - name: KEYCLOAK_DB_PASSWORD
         valueFrom:
           secretKeyRef: { name: keycloak-db-credentials, key: password }
+      - name: POSTGRES_EXPORTER_USER
+        valueFrom:
+          secretKeyRef: { name: postgres-exporter-credentials, key: username }
       - name: POSTGRES_EXPORTER_PASSWORD
         valueFrom:
           secretKeyRef: { name: postgres-exporter-credentials, key: password }
     initdb:
       scripts:
-        # Пароли берутся из переменных окружения, а не из values.
+        # Логины и пароли берутся из переменных окружения (Secret из Vault).
         init.sql: |
+          \getenv gitlab_user GITLAB_DB_USER
           \getenv gitlab_password GITLAB_DB_PASSWORD
+          \getenv keycloak_user KEYCLOAK_DB_USER
           \getenv keycloak_password KEYCLOAK_DB_PASSWORD
+          \getenv exporter_user POSTGRES_EXPORTER_USER
           \getenv exporter_password POSTGRES_EXPORTER_PASSWORD
-          CREATE ROLE gitlab LOGIN PASSWORD :'gitlab_password';
-          CREATE ROLE keycloak LOGIN PASSWORD :'keycloak_password';
-          CREATE ROLE postgres_exporter LOGIN PASSWORD :'exporter_password';
-          GRANT pg_monitor TO postgres_exporter;
-          CREATE DATABASE gitlabhq_production OWNER gitlab;
-          CREATE DATABASE keycloak OWNER keycloak;
+          CREATE ROLE :"gitlab_user" LOGIN PASSWORD :'gitlab_password';
+          CREATE ROLE :"keycloak_user" LOGIN PASSWORD :'keycloak_password';
+          CREATE ROLE :"exporter_user" LOGIN PASSWORD :'exporter_password';
+          GRANT pg_monitor TO :"exporter_user";
+          CREATE DATABASE gitlabhq_production OWNER :"gitlab_user";
+          CREATE DATABASE keycloak OWNER :"keycloak_user";
           \connect gitlabhq_production
           CREATE EXTENSION IF NOT EXISTS pg_trgm;
           CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -98,8 +110,8 @@ clickhouse:
   shards: 1
   keeper:
     enabled: false
+  # Логин (auth.username) — из Vault, его передаёт Ansible.
   auth:
-    username: default
     existingSecret: clickhouse-credentials
     existingSecretKey: password
   nodeSelector:
@@ -160,8 +172,7 @@ pgadmin4:
   existingSecret: pgadmin-credentials
   secretKeys:
     pgadminPasswordKey: password
-  env:
-    email: admin@example.com
+  # Логин (env.email) — из Vault, его передаёт Ansible.
   nodeSelector:
     platform.node: core
   persistentVolume:

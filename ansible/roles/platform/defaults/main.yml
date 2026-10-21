@@ -8,18 +8,29 @@ platform_is_wsl: "{{ 'microsoft' in ansible_facts.kernel | lower }}"
 # Окружение Helm: dev, stage или prod (./cluster.sh up <env>).
 platform_env: dev
 
+# Сколько раз повторяется ожидание (helm --wait, kubectl wait), пока
+# скачиваются образы и файлы: до 12 × 20 мин на релиз.
+platform_wait_attempts: 12
+platform_retry: "bash {{ role_path }}/files/retry-downloading.sh"
+
 # Сервисы в порядке установки (foundation, secret и proxy ставятся раньше).
 # Namespace совпадает с именем chart; релиз gitlab задаёт имена ресурсов GitLab.
+# logins — значения Helm, которые chart не умеет читать из Secret: Ansible
+# берёт их из ключа username Secret (из Vault) в namespace релиза.
 platform_releases:
-  - { name: platform-db, chart: db }
+  - name: platform-db
+    chart: db
+    logins: { pgadmin4.env.email: pgadmin-credentials, clickhouse.auth.username: clickhouse-credentials }
   - { name: platform-mb, chart: mb }
-  - { name: platform-acl, chart: acl }
+  - { name: platform-acl, chart: acl, logins: { keycloak.auth.adminUser: keycloak-credentials } }
   - { name: platform-backup, chart: backup }
   - name: platform-llm
     chart: llm
     args: [--set, "llama.gpu.enabled={{ platform_gpu | string | lower }}", --set, "llama.gpu.memoryMiB={{ platform_llms_vram }}"]
-  - { name: platform-logs, chart: logs }
-  - { name: gitlab, chart: vcs }
+  - name: platform-logs
+    chart: logs
+    logins: { kube-prometheus-stack.alertmanager.config.global.smtp_auth_username: smtp-credentials }
+  - { name: gitlab, chart: vcs, logins: { global.psql.username: gitlab-db-credentials } }
   - { name: platform-cicd, chart: cicd, args: [--set, "gitlab-runner.enabled={{ platform_runner | string | lower }}"] }
   # После cicd: политика монтирования папок использует CRD Kyverno.
   - { name: platform-app, chart: app }
@@ -30,6 +41,11 @@ platform_dependency_charts: "{{ ['foundation', 'secret', 'proxy', 'gpu'] + platf
 platform_proxy_values: "{{ lookup('file', platform_charts + '/proxy/values.yaml') | from_yaml }}"
 platform_tls_dir: "{{ platform_repo }}/volumes/proxy/tls"
 platform_tls_namespaces: "{{ (platform_proxy_values.routes | map(attribute='namespace') | list + ['vcs']) | unique }}"
+# Имена *.local, которые CoreDNS направляет на Service ingress-контроллера.
+platform_hostnames: "{{ platform_proxy_values.routes | map(attribute='host') | list + platform_proxy_values.extraHosts }}"
+platform_ingress_service: "{{ platform_proxy_values['ingress-nginx'].fullnameOverride }}-controller.proxy.svc.cluster.local"
+# ConfigMap с CA *.local: DaemonSet node-hosts (proxy) и задачи GitLab Runner (cicd).
+platform_ca_namespaces: [proxy, cicd]
 
 # Секреты, которые Vault Secrets Operator синхронизирует в namespace.
 platform_vault_secrets: "{{ (lookup('file', platform_charts + '/secret/values.yaml') | from_yaml).secrets }}"
@@ -41,19 +57,22 @@ platform_required_secrets: >-
 
 # Значения секретов, которые записываются в Vault при его инициализации;
 # null — случайный пароль из 32 символов. Пути — из k8s/secret/values.yaml.
+# username — логин сервиса; у postgres, redis, gitlab-root и argocd имя
+# задано самим сервисом и хранится для справки.
 platform_vault_seed:
-  db/postgresql: { password: null }
-  db/gitlab: { password: null }
-  db/keycloak: { password: null }
-  db/postgres-exporter: { password: null }
-  db/pgadmin: { password: null }
-  db/redis: { password: null }
-  db/clickhouse: { password: null }
-  vcs/gitlab-root: { password: null }
-  acl/keycloak: { password: null }
-  backup/minio: { rootUser: admin, rootPassword: null }
-  backup/minio-gitlab: { secretKey: null }
-  backup/minio-k8up: { secretKey: null }
+  db/postgresql: { username: postgres, password: null }
+  db/gitlab: { username: gitlab, password: null }
+  db/keycloak: { username: keycloak, password: null }
+  db/postgres-exporter: { username: postgres_exporter, password: null }
+  db/pgadmin: { username: admin@example.com, password: null }
+  db/redis: { username: default, password: null }
+  db/clickhouse: { username: default, password: null }
+  vcs/gitlab-root: { username: root, password: null }
+  acl/keycloak: { username: admin, password: null }
+  backup/minio: { username: admin, password: null }
+  backup/minio-gitlab: { username: gitlab, password: null }
+  backup/minio-k8up: { username: k8up, password: null }
   backup/restic: { password: null }
-  logs/grafana: { admin-user: admin, admin-password: null }
-  logs/smtp: { password: change-me }
+  logs/grafana: { username: admin, password: null }
+  logs/smtp: { username: infra-alerts@example.com, password: change-me }
+  cicd/argocd: { username: admin, password: null }

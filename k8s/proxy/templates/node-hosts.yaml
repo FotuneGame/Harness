@@ -1,0 +1,84 @@
+{{- if .Values.nodeHosts.enabled }}
+{{- $hosts := .Values.extraHosts }}
+{{- range .Values.routes }}
+{{- $hosts = append $hosts .host }}
+{{- end }}
+{{- $service := printf "%s-controller.%s.svc.cluster.local" (index .Values "ingress-nginx" "fullnameOverride") .Release.Namespace }}
+# Имена *.local и CA для Docker узлов (см. nodeHosts в values.yaml).
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-hosts
+spec:
+  selector:
+    matchLabels:
+      app: node-hosts
+  template:
+    metadata:
+      labels:
+        app: node-hosts
+    spec:
+      # На всех узлах, включая apps с taint: nodeSelector не задаётся.
+      tolerations:
+        - operator: Exists
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: node-hosts
+          image: {{ .Values.nodeHosts.image }}
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              trap 'exit 0' TERM
+              mark='# platform-ingress'
+              while true; do
+                ip=$(getent hosts "$SERVICE" | awk '{ print $1; exit }')
+                if [ -n "$ip" ]; then
+                  { grep -v " $mark\$" /node/hosts || true
+                    for host in $HOSTS; do echo "$ip $host $mark"; done; } > /tmp/hosts
+                  # Запись на месте: /etc/hosts узла смонтирован Docker как файл.
+                  cmp -s /tmp/hosts /node/hosts || { cat /tmp/hosts > /node/hosts; echo "hosts: $ip"; }
+                fi
+                for registry in $REGISTRIES; do
+                  mkdir -p "/node/certs.d/$registry"
+                  cmp -s /ca/ca.crt "/node/certs.d/$registry/ca.crt" \
+                    || { cp /ca/ca.crt "/node/certs.d/$registry/ca.crt"; echo "ca: $registry"; }
+                done
+                sleep "$INTERVAL" & wait $!
+              done
+          env:
+            - name: SERVICE
+              value: {{ $service }}
+            - name: HOSTS
+              value: {{ join " " $hosts | quote }}
+            - name: REGISTRIES
+              value: {{ join " " .Values.nodeHosts.registries | quote }}
+            - name: INTERVAL
+              value: {{ .Values.nodeHosts.interval | quote }}
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          volumeMounts:
+            - name: hosts
+              mountPath: /node/hosts
+            - name: certs
+              mountPath: /node/certs.d
+            - name: ca
+              mountPath: /ca
+              readOnly: true
+      volumes:
+        - name: hosts
+          hostPath:
+            path: /etc/hosts
+            type: File
+        - name: certs
+          hostPath:
+            path: /etc/docker/certs.d
+            type: DirectoryOrCreate
+        - name: ca
+          configMap:
+            name: {{ .Values.caConfigMap }}
+{{- end }}

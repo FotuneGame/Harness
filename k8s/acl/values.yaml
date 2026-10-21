@@ -18,8 +18,8 @@ keycloak:
   proxyHeaders: xforwarded
   production: false
   usePasswordFiles: false
+  # Логин (auth.adminUser) — из Vault, его передаёт Ansible.
   auth:
-    adminUser: admin
     existingSecret: keycloak-credentials
     passwordSecretKey: password
   # База — PostgreSQL из namespace db.
@@ -28,9 +28,9 @@ keycloak:
   externalDatabase:
     host: postgresql.db.svc.cluster.local
     port: 5432
-    user: keycloak
     database: keycloak
     existingSecret: keycloak-db-credentials
+    existingSecretUserKey: username
     existingSecretPasswordKey: password
   nodeSelector:
     platform.node: core

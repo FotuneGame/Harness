@@ -71,8 +71,11 @@
 
     - name: Ожидание device plugin
       ansible.builtin.command: >-
+        {{ platform_retry }} kube-system
         kubectl rollout status daemonset/{{ 'hami-device-plugin' if platform_gpu_hami | bool else 'nvidia-device-plugin' }}
         -n kube-system --timeout=10m
+      environment:
+        RETRY_ATTEMPTS: "{{ platform_wait_attempts }}"
       changed_when: false
 
     - name: Ожидание ресурса nvidia.com/gpu на узле llms

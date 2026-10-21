@@ -102,7 +102,7 @@ resource "terraform_data" "cluster" {
         --mount --mount-string "${local.volumes}:/volumes" \
         ${join(" ", [for mirror in var.registry_mirrors : "--registry-mirror ${mirror}"])} \
         ${join(" ", [for option in local.extra_config : "--extra-config ${option}"])} \
-        --addons metrics-server "$${gpus[@]}"
+        --wait-timeout 30m --addons metrics-server "$${gpus[@]}"
     EOT
   }
 
@@ -125,7 +125,7 @@ resource "terraform_data" "node" {
       taint='${lookup(local.taints, each.key, "")}'
       docker update --cpus ${each.value.cpus} --memory ${each.value.memory_gib}g \
         --memory-swap ${each.value.memory_gib}g "$node"
-      kubectl --context ${local.profile} wait --for=condition=Ready "node/$node" --timeout=5m
+      kubectl --context ${local.profile} wait --for=condition=Ready "node/$node" --timeout=30m
       kubectl --context ${local.profile} label node "$node" platform.node=${each.key} --overwrite
       kubectl --context ${local.profile} label node "$node" ${each.value.vram_mib > 0 ? "platform.gpu=on --overwrite" : "platform.gpu-"}
       if [ -n "$taint" ]; then

@@ -39,7 +39,11 @@
 # Пока сеть подов (kindnet) не готова, kubelet пересоздаёт sandbox подов и
 # перезапускает их контейнеры: сервисы ставятся после готовности сети и DNS.
 - name: Ожидание сети подов
-  ansible.builtin.command: kubectl wait pod -n kube-system -l app=kindnet --for=condition=Ready --timeout=15m
+  ansible.builtin.command: >-
+    {{ platform_retry }} kube-system
+    kubectl wait pod -n kube-system -l app=kindnet --for=condition=Ready --timeout=15m
+  environment:
+    RETRY_ATTEMPTS: "{{ platform_wait_attempts }}"
   changed_when: false
 
 # coredns, запущенный до сети подов, уходит в CrashLoopBackOff с паузами до
@@ -68,6 +72,9 @@
   register: platform_tls_secret
   changed_when: "'unchanged' not in platform_tls_secret.stdout"
 
+- name: Имена *.local и CA внутри кластера
+  ansible.builtin.include_tasks: dns.yml
+
 # Vault становится ready только после разблокировки, поэтому без --wait.
 - name: Vault и Vault Secrets Operator
   ansible.builtin.include_tasks: release.yml
@@ -76,6 +83,15 @@
 
 - name: Инициализация и настройка Vault
   ansible.builtin.include_tasks: vault.yml
+
+# Образы Vault Secrets Operator могут ещё скачиваться.
+- name: Ожидание Vault Secrets Operator
+  ansible.builtin.command: >-
+    {{ platform_retry }} secret
+    kubectl rollout status deployment/vault-secrets-operator-controller-manager -n secret --timeout=10m
+  environment:
+    RETRY_ATTEMPTS: "{{ platform_wait_attempts }}"
+  changed_when: false
 
 - name: Ожидание секретов из Vault
   ansible.builtin.shell: |
@@ -113,6 +129,24 @@
   loop_control:
     loop_var: release
     label: "{{ release.name }}"
+
+# Логин admin задан Argo CD, пароль берётся из Vault cicd/argocd; хеш пароля в
+# аннотации — чтобы не менять argocd-secret без изменения пароля.
+- name: Пароль администратора Argo CD из Vault
+  ansible.builtin.shell: |
+    set -eu
+    password=$(kubectl get secret -n cicd argocd-admin-credentials -o jsonpath='{.data.password}' | base64 -d)
+    sum=$(printf '%s' "$password" | sha256sum | cut -c1-64)
+    [ "$(kubectl get secret -n cicd argocd-secret -o jsonpath='{.metadata.annotations.platform/admin-password}')" = "$sum" ] && exit 0
+    hash=$(printf '%s\n' "$password" | kubectl exec -i -n cicd deploy/argocd-server -- \
+      sh -c 'IFS= read -r p; argocd account bcrypt --password "$p"')
+    kubectl patch secret -n cicd argocd-secret --type merge -p "$(jq -n --arg sum "$sum" --arg hash "$hash" '
+      {metadata: {annotations: {"platform/admin-password": $sum}},
+       stringData: {"admin.password": $hash, "admin.passwordMtime": (now | todate)}}')"
+    kubectl delete secret -n cicd argocd-initial-admin-secret --ignore-not-found
+    echo changed
+  register: platform_argocd_password
+  changed_when: "'changed' in platform_argocd_password.stdout"
 
 - name: Итог
   ansible.builtin.debug:

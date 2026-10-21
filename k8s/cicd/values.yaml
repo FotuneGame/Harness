@@ -51,6 +51,12 @@ gitlab-runner:
           privileged = false
           cpu_limit = "{{ .Values.jobLimits.cpu }}"
           memory_limit = "{{ .Values.jobLimits.memory }}"
+          # CA *.local (ConfigMap создаёт Ansible): docker login registry.local
+          # в задачах. Имя registry.local разрешает CoreDNS.
+          [[runners.kubernetes.volumes.config_map]]
+            name = "local-ca"
+            mount_path = "/etc/docker/certs.d/registry.local/ca.crt"
+            sub_path = "ca.crt"
   # Лимиты job-подов (подставляются в runners.config).
   jobLimits:
     cpu: "1"

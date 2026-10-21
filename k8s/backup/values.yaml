@@ -24,8 +24,8 @@ minio:
     repository: bitnamilegacy/minio-client
   auth:
     existingSecret: minio-credentials
-    rootUserSecretKey: rootUser
-    rootPasswordSecretKey: rootPassword
+    rootUserSecretKey: username
+    rootPasswordSecretKey: password
   console:
     enabled: false
   # Права на hostPath-том для пользователя контейнера.
@@ -44,8 +44,8 @@ minio:
       cpu: 100m
       memory: 256Mi
   # Бакеты, политики и пользователи создаёт post-install job chart.
-  # Пользователи — Secret из k8s/secret (minio-user-*), имя gitlab используется
-  # в подключении GitLab, k8up — ниже.
+  # Пользователи — Secret из k8s/secret (minio-user-*): логины и пароли из
+  # Vault backup/minio-gitlab и backup/minio-k8up.
   provisioning:
     enabled: true
     nodeSelector:
@@ -82,16 +82,19 @@ k8up:
   fullnameOverride: k8up
   nodeSelector:
     platform.node: core
-  envVars:
-    - name: BACKUP_GLOBALS3ENDPOINT
-      value: http://minio.backup.svc.cluster.local:9000
-    - name: BACKUP_GLOBALS3BUCKET
-      value: backups
-    - name: BACKUP_GLOBALACCESSKEYID
-      value: k8up
-    - name: BACKUP_GLOBALSECRETACCESSKEY
-      valueFrom:
-        secretKeyRef: { name: minio-k8up-credentials, key: secretKey }
-    - name: BACKUP_GLOBALREPOPASSWORD
-      valueFrom:
-        secretKeyRef: { name: k8up-restic-credentials, key: password }
+  # Глобальные S3 и restic для всех Backup/Check/Prune (ключ k8up chart).
+  k8up:
+    envVars:
+      - name: BACKUP_GLOBALS3ENDPOINT
+        value: http://minio.backup.svc.cluster.local:9000
+      - name: BACKUP_GLOBALS3BUCKET
+        value: backups
+      - name: BACKUP_GLOBALACCESSKEYID
+        valueFrom:
+          secretKeyRef: { name: minio-k8up-credentials, key: username }
+      - name: BACKUP_GLOBALSECRETACCESSKEY
+        valueFrom:
+          secretKeyRef: { name: minio-k8up-credentials, key: password }
+      - name: BACKUP_GLOBALREPOPASSWORD
+        valueFrom:
+          secretKeyRef: { name: k8up-restic-credentials, key: password }
