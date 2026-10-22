@@ -27,9 +27,7 @@ routes:
 # Ingress, который создаёт chart GitLab (k8s/vcs).
 extraHosts: [gitlab.local]
 
-# Аннотации маршрутов без собственных annotations: ограничение частоты запросов.
-# Веб-интерфейсы при открытии загружают сотни файлов параллельно (HTTP/2),
-# поэтому лимиты рассчитаны на это, а не на единицы запросов.
+# Лимиты запросов: веб-интерфейсы загружают сотни файлов параллельно.
 annotations:
   nginx.ingress.kubernetes.io/limit-rps: "100"
   nginx.ingress.kubernetes.io/limit-burst-multiplier: "10"
@@ -41,20 +39,15 @@ tlsSecret: local-wildcard-tls
 # ConfigMap с CA *.local (ключ ca.crt) создаёт Ansible в namespace proxy и cicd.
 caConfigMap: local-ca
 
-# Изнутри кластера имена *.local разрешает CoreDNS (настраивает Ansible), но
-# Docker на узлах использует DNS узла. DaemonSet на всех узлах записывает имена
-# в /etc/hosts узла (на ClusterIP ingress-контроллера) и CA в
-# /etc/docker/certs.d/<registry>/ca.crt: kubelet скачивает образы registry.local.
-# Docker пересоздаёт /etc/hosts узла при запуске, поэтому записи проверяются
-# каждые interval секунд.
+# Docker узлов не использует CoreDNS: DaemonSet записывает имена *.local в
+# /etc/hosts узла и CA в /etc/docker/certs.d (для образов registry.local).
+# Docker пересоздаёт /etc/hosts при запуске — проверка каждые interval секунд.
 nodeHosts:
   enabled: true
   image: alpine:3.22
   registries: [registry.local]
   interval: 60
 
-# Service ingress-nginx-controller (80/443), снаружи доступен через
-# ./cluster.sh ports open.
 ingress-nginx:
   fullnameOverride: ingress-nginx
   controller:

@@ -1,0 +1,64 @@
+# Создаёт или обновляет учётки приложений после каждой установки chart.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: app-accounts
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        platform.node: core
+      containers:
+        - name: postgresql
+          image: {{ .Values.appAccounts.postgresqlImage }}
+          imagePullPolicy: IfNotPresent
+          command: [sh, -ec]
+          args:
+            - |
+              psql -v ON_ERROR_STOP=1 -h postgresql -U postgres -d postgres <<'SQL'
+              \getenv user APP_USER
+              \getenv password APP_PASSWORD
+              SELECT format('CREATE ROLE %I LOGIN', :'user')
+                WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user') \gexec
+              ALTER ROLE :"user" WITH LOGIN PASSWORD :'password';
+              SELECT format('CREATE DATABASE %I OWNER %I', :'user', :'user')
+                WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'user') \gexec
+              SQL
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgresql-credentials, key: password }
+            - name: APP_USER
+              valueFrom:
+                secretKeyRef: { name: app-postgresql-credentials, key: username }
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: app-postgresql-credentials, key: password }
+        - name: clickhouse
+          image: {{ .Values.appAccounts.clickhouseImage }}
+          imagePullPolicy: IfNotPresent
+          command: [sh, -ec]
+          args:
+            - |
+              case "$APP_USER" in *[!a-z0-9_]*) echo "Логин только из a-z, 0-9, _" >&2; exit 1 ;; esac
+              password=$(printf '%s' "$APP_PASSWORD" | sed "s/[\\\\']/\\\\&/g")
+              clickhouse-client --host clickhouse --user default --password "$ADMIN_PASSWORD" --multiquery --query "
+                CREATE USER IF NOT EXISTS $APP_USER IDENTIFIED BY '$password';
+                ALTER USER $APP_USER IDENTIFIED BY '$password';
+                CREATE DATABASE IF NOT EXISTS $APP_USER;
+                GRANT ALL ON $APP_USER.* TO $APP_USER;"
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: clickhouse-credentials, key: password }
+            - name: APP_USER
+              valueFrom:
+                secretKeyRef: { name: app-clickhouse-credentials, key: username }
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: app-clickhouse-credentials, key: password }

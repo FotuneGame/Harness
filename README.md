@@ -90,8 +90,12 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
   Откройте WSL заново, проверьте `docker info` и повторите `./cluster.sh up`.
 - При первом `up` выводятся 5 unseal key Vault и пароль пользователя `admin` —
   сохраните их, повторно они не показываются. После каждого запуска Vault
-  запечатан: `start`, `up` и `unseal` просят 3 ключа.
-- Логины и пароли — в Vault (какой путь для какого сайта — таблица выше).
+  запечатан: `start`, `up` и `unseal` просят 3 ключа. Если изменились пути
+  секретов (`k8s/secret/values.yaml`) или начальные значения, `up` тоже просит
+  3 ключа: по ним создаётся временный root token, который отзывается после
+  настройки.
+- Логины и пароли — в Vault (https://vault.local, метод Userpass, `admin`),
+  ключи `username` и `password`.
   - Создаются автоматически при первом `up` (список — `platform_vault_seed` в
     `ansible/roles/platform/defaults/main.yml`); `backup/restic` — пароль
     шифрования резервных копий K8up, без него копии не восстановить.
@@ -137,6 +141,10 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
   попадают на узел apps и получают папку `volumes/app/<приложение>` в `/app-data`
   (имя — метка `app.kubernetes.io/instance`, иначе `app.kubernetes.io/name`, иначе
   `app`, иначе `shared`). Данные приложений входят в резервное копирование.
+- Подключения приложений в namespace `app` — Secret из Vault:
+  `postgresql-credentials` и `clickhouse-credentials` (учётка `app` и база `app`),
+  `minio-credentials` (bucket `app`), `redis-credentials`. Шаблон бэкенда с
+  настроенными подключениями и CI/CD — [example/node](example/node/README.md).
 - Характеристики сервера и узлов (CPU, RAM, диск, VRAM, память WSL, версия
   Kubernetes) задаются только в `terraform/variables.tf`; Ansible читает их из Terraform.
 - Изменение числа узлов, ресурсов `core`, GPU или версии Kubernetes в

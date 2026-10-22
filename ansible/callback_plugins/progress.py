@@ -1,8 +1,5 @@
-# Вывод Ansible по умолчанию + ход долгих задач в одной перезаписываемой
-# строке: прошедшее время, а для установки Helm — состояние подов namespace
-# (namespace берётся из имени задачи «... kubectl get pods -n <namespace>)»).
-# Вместо «ASYNC POLL ...» и «FAILED - RETRYING» печатается понятный текст.
-# Включается в cluster.sh (ANSIBLE_STDOUT_CALLBACK=progress).
+# Вывод Ansible по умолчанию + ход долгих задач в одной перезаписываемой строке;
+# для Helm — состояние подов namespace из имени задачи «... kubectl get pods -n <ns>)».
 import re
 import shutil
 import subprocess
@@ -33,8 +30,6 @@ class CallbackModule(DefaultCallbackModule):
     _line_open = False
     _task_started = 0.0
     _namespace = None
-
-    # --- строка хода выполнения ---
 
     def _elapsed(self):
         seconds = int(time.monotonic() - self._task_started)
@@ -73,8 +68,6 @@ class CallbackModule(DefaultCallbackModule):
             sys.stdout.write("\n")
             sys.stdout.flush()
             self._line_open = False
-
-    # --- события Ansible ---
 
     def v2_playbook_on_task_start(self, task, is_conditional):
         self._close_line()

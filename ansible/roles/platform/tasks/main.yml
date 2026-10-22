@@ -84,7 +84,6 @@
 - name: Инициализация и настройка Vault
   ansible.builtin.include_tasks: vault.yml
 
-# Образы Vault Secrets Operator могут ещё скачиваться.
 - name: Ожидание Vault Secrets Operator
   ansible.builtin.command: >-
     {{ platform_retry }} secret
@@ -130,8 +129,7 @@
     loop_var: release
     label: "{{ release.name }}"
 
-# Логин admin задан Argo CD, пароль берётся из Vault cicd/argocd; хеш пароля в
-# аннотации — чтобы не менять argocd-secret без изменения пароля.
+# Хеш пароля в аннотации: argocd-secret меняется только при смене пароля.
 - name: Пароль администратора Argo CD из Vault
   ansible.builtin.shell: |
     set -eu

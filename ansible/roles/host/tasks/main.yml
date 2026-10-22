@@ -40,7 +40,6 @@
       loop: "{{ host_archives }}"
       loop_control:
         label: "{{ item.url | basename }}"
-      # Медленная сеть: обрыв загрузки повторяется.
       register: host_archive_download
       until: host_archive_download is succeeded
       retries: 5
@@ -92,13 +91,11 @@
       loop: "{{ host_binaries }}"
       loop_control:
         label: "{{ item.dest }}"
-      # Медленная сеть: обрыв загрузки повторяется.
       register: host_binary_download
       until: host_binary_download is succeeded
       retries: 5
       delay: 10
 
-    # Проброс портов 80/443 без root: ./cluster.sh ports open.
     - name: Разрешение kubectl слушать порты ниже 1024
       community.general.capabilities:
         path: /usr/local/bin/kubectl

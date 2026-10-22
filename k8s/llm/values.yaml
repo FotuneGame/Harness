@@ -1,5 +1,4 @@
-# Официального chart llama.cpp нет: Deployment/Service/PVC llama (templates/).
-# Модель скачивается init-контейнером в PVC models-llama-0 (volumes/llm/llama).
+# Официального chart llama.cpp нет (templates/); модель скачивается в volumes/llm/llama.
 llama:
   image:
     repository: ghcr.io/ggml-org/llama.cpp
@@ -19,18 +18,14 @@ llama:
       memory: 2Gi
     limits:
       memory: 4Gi
-  # Включает Ansible, если на узле llms есть ресурс nvidia.com/gpu.
-  # memoryMiB — лимит VRAM через HAMi (доля узла llms из terraform/variables.tf);
-  # 0 — без лимита (WSL2, NVIDIA device plugin).
+  # Задаёт Ansible; memoryMiB — лимит VRAM HAMi, 0 — без лимита (WSL2).
   gpu:
     enabled: false
     memoryMiB: 0
     layers: 99
     imageTag: server-cuda
   server:
-    # Контекст на все запросы (токены). Open WebUI добавляет к каждому
-    # сообщению инструкции и описания встроенных инструментов (~6500 токенов),
-    # Qwen2.5 поддерживает до 32768; кеш 16384 токенов занимает ~200 МБ.
+    # Open WebUI добавляет к каждому сообщению ~6500 токенов инструкций.
     contextSize: 16384
     noMap: false
     cacheTypeK: f16
@@ -40,7 +35,6 @@ llama:
     ubatchSize: 128
     flashAttention: auto
 
-# Проверка модели через llama-perplexity (Job llama-perplexity).
 perplexity:
   enabled: false
   image: ghcr.io/ggml-org/llama.cpp:full
@@ -55,7 +49,6 @@ perplexity:
   batchSize: 512
   ubatchSize: 128
 
-# Service open-webui:8080, StatefulSet open-webui, PVC open-webui.
 open-webui:
   fullnameOverride: open-webui
   image:

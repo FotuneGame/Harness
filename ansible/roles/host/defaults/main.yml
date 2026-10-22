@@ -2,8 +2,7 @@
 host_repo: "{{ playbook_dir | dirname }}"
 host_is_wsl: "{{ 'microsoft' in ansible_facts.kernel | lower }}"
 
-# Параметры железа и кластера (память WSL, версия Kubernetes, путь ключа etcd)
-# задаёт только Terraform: роль читает их в host_tf (terraform/main.tf, local.ansible).
+# Параметры железа и кластера задаёт только Terraform (local.ansible).
 
 host_packages:
   - ca-certificates
@@ -17,7 +16,6 @@ host_packages:
   - tar
   - unzip
 
-# CLI с проверкой контрольных сумм. kubectl — версии kubernetes_version из Terraform.
 host_binaries:
   - url: https://storage.googleapis.com/minikube/releases/v1.34.0/minikube-linux-amd64
     checksum: sha256:https://storage.googleapis.com/minikube/releases/v1.34.0/minikube-linux-amd64.sha256
@@ -39,9 +37,7 @@ host_archives_dir: /opt/platform-tools
 host_encryption_config: "{{ host_repo }}/volumes/minikube/encryption/encryption-config.yaml"
 host_encryption_node_path: "{{ host_tf.encryption_config }}"
 
-# Локальный CA (только для имён *.local) и сертификат ingress.
 host_tls_dir: "{{ host_repo }}/volumes/proxy/tls"
 
-# Имена *.local: маршруты ingress из k8s/proxy/values.yaml.
 host_proxy_values: "{{ lookup('file', host_repo + '/k8s/proxy/values.yaml') | from_yaml }}"
 host_hostnames: "{{ host_proxy_values.routes | map(attribute='host') | list + host_proxy_values.extraHosts }}"

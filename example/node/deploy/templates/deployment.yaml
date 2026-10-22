@@ -1,0 +1,67 @@
+# Namespace app: узел apps и папку /app-data поду добавляет платформа.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: APP_NAME
+              value: {{ .Release.Name }}
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # Логины и пароли — Secret из Vault (app/*, db/redis); база = логин.
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: postgresql-credentials, key: username }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: postgresql-credentials, key: username }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgresql-credentials, key: password }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: redis-credentials, key: password }
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef: { name: clickhouse-credentials, key: username }
+            - name: CLICKHOUSE_DB
+              valueFrom:
+                secretKeyRef: { name: clickhouse-credentials, key: username }
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: clickhouse-credentials, key: password }
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: minio-credentials, key: username }
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: minio-credentials, key: password }
+          readinessProbe:
+            httpGet: { path: /health/live, port: http }
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            initialDelaySeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

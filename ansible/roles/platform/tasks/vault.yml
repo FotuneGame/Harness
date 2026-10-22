@@ -13,47 +13,68 @@
   changed_when: false
   failed_when: platform_vault_status.stdout | length == 0
   register: platform_vault_status
+  until: platform_vault_status.stdout | length > 0
+  retries: 12
+  delay: 5
 
-- name: Разбор состояния Vault
-  ansible.builtin.set_fact:
-    platform_vault: "{{ platform_vault_status.stdout | from_json }}"
-
-# Vault запечатывается при каждом перезапуске pod: нужны 3 из 5 unseal key.
-- name: Разблокировка Vault
-  when: platform_vault.initialized and platform_vault.sealed
-  block:
-    - name: Ввод unseal key
-      ansible.builtin.pause:
-        prompt: "Unseal key Vault ({{ item }} из 3)"
-        echo: false
-      loop: [1, 2, 3]
-      register: platform_unseal_keys
-      no_log: true
-
-    - name: Применение unseal key
-      ansible.builtin.command:
-        argv: [kubectl, exec, -i, -n, secret, vault-0, --, sh, -c, 'read -r key; vault operator unseal "$key"']
-        stdin: "{{ item.user_input }}"
-      loop: "{{ platform_unseal_keys.results }}"
-      no_log: true
-
-# Настройка хранится в данных Vault (volumes/secret) и переживает пересоздание
-# кластера. Признак готовности — Secret, который Vault Secrets Operator получил
-# из Vault. Если его нет, настройка прервалась и продолжается с root token.
-- name: Признак завершённой настройки Vault
-  ansible.builtin.command: kubectl get secret -n {{ platform_required_secrets.split() | first | replace('/', ' ') }}
+# Настройка (политики, роли, начальные секреты) применяется заново, если
+# изменился шаблон или списки секретов: хеш хранится в ConfigMap vault-config.
+- name: Применённая настройка Vault
+  ansible.builtin.command: kubectl get configmap -n secret vault-config -o jsonpath={.data.hash}
   changed_when: false
   failed_when: false
-  register: platform_vault_configured
-  until: platform_vault_configured.rc == 0
-  retries: 12
-  delay: 10
-  when: platform_vault.initialized
+  register: platform_vault_applied
+
+- name: Нужна ли настройка Vault
+  ansible.builtin.set_fact:
+    platform_vault: "{{ platform_vault_status.stdout | from_json }}"
+    platform_vault_hash: >-
+      {{ (lookup('ansible.builtin.file', role_path ~ '/templates/vault-init.sh.j2')
+          ~ (platform_vault_secrets | to_json) ~ (platform_vault_seed | to_json)) | hash('sha256') }}
+
+- name: Нужна ли настройка Vault (итог)
+  ansible.builtin.set_fact:
+    platform_vault_setup: "{{ not platform_vault.initialized or platform_vault_applied.stdout != platform_vault_hash }}"
+
+# Root token по unseal key требует enable_unauthenticated_access из
+# k8s/secret/values.yaml: конфигурация читается только при запуске pod.
+- name: Перезапуск Vault с новой конфигурацией
+  ansible.builtin.shell: |
+    kubectl exec -n secret vault-0 -- grep -q enable_unauthenticated_access /tmp/storageconfig.hcl && exit 0
+    kubectl delete pod -n secret vault-0
+    kubectl wait pod/vault-0 -n secret --for=jsonpath={.status.phase}=Running --timeout=10m
+    until kubectl exec -n secret vault-0 -- vault status >/dev/null 2>&1 || [ $? -eq 2 ]; do sleep 2; done
+    echo restarted
+  register: platform_vault_restart
+  changed_when: "'restarted' in platform_vault_restart.stdout"
+  when: platform_vault.initialized and platform_vault_setup
+
+- name: Vault запечатан после перезапуска
+  ansible.builtin.set_fact:
+    platform_vault: "{{ platform_vault | combine({'sealed': true}) }}"
+  when: platform_vault_restart is changed
+
+# Ключи нужны после каждого перезапуска pod и для root token при настройке.
+- name: Ввод unseal key
+  ansible.builtin.pause:
+    prompt: "{{ 'Unseal key' if platform_vault.sealed else 'Настройка Vault изменилась, unseal key' }} ({{ item }} из 3)"
+    echo: false
+  loop: [1, 2, 3]
+  register: platform_unseal_keys
+  no_log: true
+  when: platform_vault.initialized and (platform_vault.sealed or platform_vault_setup)
+
+- name: Разблокировка Vault
+  ansible.builtin.command:
+    argv: [kubectl, exec, -i, -n, secret, vault-0, --, sh, -c, 'read -r key; vault operator unseal "$key"']
+    stdin: "{{ item.user_input }}"
+  loop: "{{ platform_unseal_keys.results }}"
+  no_log: true
+  when: platform_vault.initialized and platform_vault.sealed
 
 - name: Настройка Vault
-  when: not platform_vault.initialized or platform_vault_configured.rc != 0
+  when: platform_vault_setup
   block:
-    # Первый запуск: 5 unseal keys (порог 3).
     - name: Инициализация Vault
       ansible.builtin.command: kubectl exec -n secret vault-0 -- vault operator init -format=json
       register: platform_vault_init
@@ -74,17 +95,34 @@
           - "{{ platform_vault_keys }}"
       when: not platform_vault.initialized
 
-    - name: Ввод root token для продолжения настройки
-      ansible.builtin.pause:
-        prompt: "Настройка Vault не была завершена. Введите root token из сообщения об ошибке"
-        echo: false
-      register: platform_vault_root_input
+    - name: Временный root token по unseal key
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - exec
+          - -i
+          - -n
+          - secret
+          - vault-0
+          - --
+          - sh
+          - -ec
+          - |
+            vault operator generate-root -cancel >/dev/null 2>&1 || true
+            otp=$(vault operator generate-root -generate-otp)
+            nonce=$(vault operator generate-root -init -otp="$otp" -format=json | sed -n 's/.*"nonce": *"\([^"]*\)".*/\1/p')
+            while read -r key; do
+              encoded=$(vault operator generate-root -nonce="$nonce" -format=json "$key" | sed -n 's/.*"encoded_token": *"\([^"]*\)".*/\1/p')
+            done
+            vault operator generate-root -decode="$encoded" -otp="$otp"
+        stdin: "{{ platform_unseal_keys.results | map(attribute='user_input') | join('\n') }}"
+      register: platform_vault_generated
       no_log: true
       when: platform_vault.initialized
 
-    - name: Root token из ввода
+    - name: Root token
       ansible.builtin.set_fact:
-        platform_vault_root: "{{ platform_vault_root_input.user_input | trim }}"
+        platform_vault_root: "{{ platform_vault_generated.stdout | trim }}"
       no_log: true
       when: platform_vault.initialized
 
@@ -93,23 +131,25 @@
         platform_vault_admin_password: "{{ lookup('ansible.builtin.password', '/dev/null length=24 chars=ascii_letters,digits') }}"
       no_log: true
 
-    # Политики, роли Vault Secrets Operator, пользователь admin, сгенерированные
-    # секреты; root token в конце отзывается.
-    - name: Разблокировка и настройка Vault
+    - name: Настройка Vault (политики, роли, admin, начальные секреты)
       ansible.builtin.command:
         argv: [kubectl, exec, -i, -n, secret, vault-0, --, sh, -s]
         stdin: "{{ lookup('ansible.builtin.template', 'vault-init.sh.j2') }}"
-      register: platform_vault_setup
+      register: platform_vault_configure
       no_log: true
 
     - name: Пароль пользователя admin (показывается один раз)
       ansible.builtin.debug:
         msg: "Vault UI https://vault.local: метод Userpass, пользователь admin, пароль {{ platform_vault_admin_password }}"
-      when: "'admin-created' in platform_vault_setup.stdout"
+      when: "'admin-created' in platform_vault_configure.stdout"
+
+    - name: Запись применённой настройки
+      ansible.builtin.shell: >-
+        kubectl create configmap vault-config -n secret --from-literal=hash={{ platform_vault_hash }}
+        --dry-run=client -o yaml | kubectl apply -f -
   rescue:
     - name: Ошибка настройки Vault
       ansible.builtin.fail:
         msg: >-
-          Настройка Vault не завершена{{ ': ' ~ (platform_vault_setup.stderr | default('') | trim) if platform_vault_setup.stderr | default('') }}.
-          Root token для продолжения: {{ platform_vault_root | default('не получен') }}.
-          Повторите ./cluster.sh up — он спросит этот token.
+          Настройка Vault не завершена{{ ': ' ~ (platform_vault_configure.stderr | default('') | trim) if platform_vault_configure.stderr | default('') }}.
+          Повторите ./cluster.sh up — он спросит 3 unseal key и продолжит настройку.

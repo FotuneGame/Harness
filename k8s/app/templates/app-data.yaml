@@ -1,5 +1,4 @@
 {{- $data := .Values.appData }}
-# PVC на PV pv-app (volumes/app на узле apps, k8s/foundation).
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

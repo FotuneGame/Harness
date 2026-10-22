@@ -1,10 +1,6 @@
 ---
-# Установка или обновление релиза Helm из k8s/<chart> с values-<env>.yaml;
-# release.args — дополнительные аргументы helm, release.logins — значения из
-# ключа username Secret (из Vault). Команда выполняется в фоне,
-# каждые 15 с в терминале печатается время выполнения (callback_plugins/progress.py).
-# Таймаут Helm при первой загрузке образов и файлов не ошибка: установка
-# повторяется, пока загрузка идёт (files/retry-downloading.sh).
+# Релиз Helm из k8s/<chart> с values-<env>.yaml; release.args — аргументы helm,
+# release.logins — значения из ключа username Secret.
 
 # Helm не пересоздаёт Job с прежним содержимым: упавший Job (например,
 # миграции GitLab) удаляется, чтобы повторный up запустил его заново.

@@ -1,4 +1,3 @@
-# Имена ресурсов: logs-prometheus, logs-alertmanager, logs-grafana, logs-operator.
 kube-prometheus-stack:
   fullnameOverride: logs
   crds:
@@ -76,7 +75,6 @@ kube-prometheus-stack:
       nodeSelector:
         platform.node: core
       retention: 7d
-      # Prometheus собирает ServiceMonitor/PodMonitor из всех namespace.
       serviceMonitorSelectorNilUsesHelmValues: false
       serviceMonitorNamespaceSelector: {}
       podMonitorSelectorNilUsesHelmValues: false
@@ -244,7 +242,6 @@ jaeger:
       jaeger_storage_exporter:
         trace_storage: local
 
-# Экспортеры: Deployment/Service и ServiceMonitor в namespace logs.
 prometheus-postgres-exporter:
   fullnameOverride: postgres-exporter
   config:

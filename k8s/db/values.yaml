@@ -1,12 +1,9 @@
-# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/. Реестр docker.io (а не registry-1.docker.io),
-# чтобы образы шли через зеркало Docker Hub (terraform/variables.tf, registry_mirrors).
+# Образы Bitnami — в bitnamilegacy/ (allowInsecureImages); docker.io — через зеркало.
 global:
   imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
-# Service/StatefulSet postgresql, PVC data-postgresql-0.
 postgresql:
   fullnameOverride: postgresql
   auth:
@@ -18,12 +15,10 @@ postgresql:
     secretKeys:
       adminPasswordKey: password
   primary:
-    # GitLab создаёт схему базы одной транзакцией с тысячами таблиц и партиций:
-    # стандартных 64 блокировок не хватает (ERROR: out of shared memory).
+    # Миграции GitLab: иначе ERROR: out of shared memory.
     extendedConfiguration: |
       max_locks_per_transaction = 512
-    # Восстановление после сбоя на медленном диске (volumes/ в WSL) занимает
-    # минуты: liveness-проба не должна прерывать запуск. Ждём до 10 минут.
+    # Восстановление после сбоя на медленном диске (WSL) занимает минуты.
     startupProbe:
       enabled: true
       periodSeconds: 10
@@ -59,7 +54,6 @@ postgresql:
           secretKeyRef: { name: postgres-exporter-credentials, key: password }
     initdb:
       scripts:
-        # Логины и пароли берутся из переменных окружения (Secret из Vault).
         init.sql: |
           \getenv gitlab_user GITLAB_DB_USER
           \getenv gitlab_password GITLAB_DB_PASSWORD
@@ -79,7 +73,6 @@ postgresql:
   volumePermissions:
     enabled: true
 
-# Service/StatefulSet redis-master, PVC redis-data-redis-master-0.
 redis:
   fullnameOverride: redis
   architecture: standalone
@@ -100,8 +93,6 @@ redis:
   volumePermissions:
     enabled: true
 
-# Service clickhouse (8123/9000, метрики 9363), StatefulSet clickhouse-shard0,
-# PVC data-clickhouse-shard0-0.
 clickhouse:
   fullnameOverride: clickhouse
   image:
@@ -126,23 +117,22 @@ clickhouse:
   metrics:
     enabled: true
 
-# Service elasticsearch (9200), StatefulSet elasticsearch-master,
-# PVC data-elasticsearch-master-0.
 elasticsearch:
   fullnameOverride: elasticsearch
   image:
     repository: bitnamilegacy/elasticsearch
   security:
     enabled: false
-  # Без mmap Elasticsearch не требует vm.max_map_count=262144 на узле,
-  # поэтому привилегированный sysctl-контейнер не нужен.
+  # Без mmap не нужен привилегированный sysctl vm.max_map_count.
   extraConfig:
     node:
       store:
         allow_mmap: false
   sysctlImage:
     enabled: false
+  # Один узел — и master, и data: без роли data индексы негде хранить.
   master:
+    masterOnly: false
     replicaCount: 1
     heapSize: 512m
     nodeSelector:
@@ -166,7 +156,6 @@ elasticsearch:
     image:
       repository: bitnamilegacy/os-shell
 
-# Deployment/Service pgadmin, PVC pgadmin.
 pgadmin4:
   fullnameOverride: pgadmin
   existingSecret: pgadmin-credentials
@@ -189,8 +178,14 @@ pgadmin4:
     maxReplicas: 3
     targetCPUUtilizationPercentage: 75
 
-# Официального chart нет: Deployment/Service/HPA redisinsight (templates/).
+# Официального chart нет (templates/).
 redisinsight:
   image: redis/redisinsight:latest
   maxReplicas: 3
   targetCPUUtilizationPercentage: 75
+
+# Учётки приложений (Vault app/postgresql, app/clickhouse): база с именем логина
+# и полные права только на неё. Образы — те же, что у PostgreSQL и ClickHouse.
+appAccounts:
+  postgresqlImage: docker.io/bitnami/postgresql:latest
+  clickhouseImage: docker.io/bitnamilegacy/clickhouse:25.7.5-debian-12-r0

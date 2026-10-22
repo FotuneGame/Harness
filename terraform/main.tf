@@ -47,9 +47,7 @@ locals {
     extra_config       = local.extra_config
   }
 
-  # Всё, что нужно Ansible: Terraform — единственный источник параметров железа.
-  # Роль host читает это через terraform console (до apply), роль platform — из
-  # output ansible.
+  # Параметры для Ansible: host читает через terraform console, platform — output.
   ansible = {
     profile            = local.profile
     wsl_memory_gib     = var.host.memory_gib
@@ -112,7 +110,6 @@ resource "terraform_data" "cluster" {
   }
 }
 
-# Ресурсы, метки (platform.node; platform.gpu=on у узлов с VRAM) и taint узла.
 resource "terraform_data" "node" {
   for_each         = var.nodes
   triggers_replace = [terraform_data.cluster.id, each.value]

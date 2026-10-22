@@ -1,4 +1,3 @@
-# Расписание K8up (Schedule backup) в каждом namespace из списка.
 schedule:
   namespaces: [db, mb, llm, vcs, secret, acl, logs, app]
   backup: "0 2 * * *"
@@ -7,14 +6,12 @@ schedule:
   keepLast: 7
   keepDaily: 7
 
-# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/, docker.io — загрузка через зеркало Docker Hub.
+# Образы Bitnami — в bitnamilegacy/ (allowInsecureImages); docker.io — через зеркало.
 global:
   imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
-# Service minio:9000, Deployment minio, PVC minio (volumes/backups).
 minio:
   fullnameOverride: minio
   mode: standalone
@@ -28,7 +25,6 @@ minio:
     rootPasswordSecretKey: password
   console:
     enabled: false
-  # Права на hostPath-том для пользователя контейнера.
   defaultInitContainers:
     volumePermissions:
       enabled: true
@@ -43,9 +39,7 @@ minio:
     requests:
       cpu: 100m
       memory: 256Mi
-  # Бакеты, политики и пользователи создаёт post-install job chart.
-  # Пользователи — Secret из k8s/secret (minio-user-*): логины и пароли из
-  # Vault backup/minio-gitlab и backup/minio-k8up.
+  # Пользователи — Secret minio-user-* (k8s/secret) из Vault.
   provisioning:
     enabled: true
     nodeSelector:
@@ -57,6 +51,7 @@ minio:
       - name: gitlab-uploads
       - name: gitlab-packages
       - name: gitlab-pages
+      - name: app
     policies:
       - name: gitlab-storage
         statements:
@@ -65,6 +60,14 @@ minio:
             actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
           - effect: Allow
             resources: ["arn:aws:s3:::gitlab-*/*"]
+            actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+      - name: app-storage
+        statements:
+          - effect: Allow
+            resources: ["arn:aws:s3:::app"]
+            actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
+          - effect: Allow
+            resources: ["arn:aws:s3:::app/*"]
             actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
       - name: k8up-backups
         statements:
@@ -77,12 +80,12 @@ minio:
     usersExistingSecrets:
       - minio-user-gitlab
       - minio-user-k8up
+      - minio-user-app
 
 k8up:
   fullnameOverride: k8up
   nodeSelector:
     platform.node: core
-  # Глобальные S3 и restic для всех Backup/Check/Prune (ключ k8up chart).
   k8up:
     envVars:
       - name: BACKUP_GLOBALS3ENDPOINT

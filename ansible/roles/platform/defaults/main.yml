@@ -1,22 +1,17 @@
 ---
 platform_repo: "{{ playbook_dir | dirname }}"
 platform_charts: "{{ platform_repo }}/k8s"
-# Параметры кластера из Terraform (output ansible): профиль, доли VRAM.
 platform_context: "{{ platform_tf.profile }}"
 platform_is_wsl: "{{ 'microsoft' in ansible_facts.kernel | lower }}"
 
-# Окружение Helm: dev, stage или prod (./cluster.sh up <env>).
 platform_env: dev
 
-# Сколько раз повторяется ожидание (helm --wait, kubectl wait), пока
-# скачиваются образы и файлы: до 12 × 20 мин на релиз.
+# Повторы ожидания (helm --wait, kubectl wait), пока скачиваются образы и файлы.
 platform_wait_attempts: 12
 platform_retry: "bash {{ role_path }}/files/retry-downloading.sh"
 
-# Сервисы в порядке установки (foundation, secret и proxy ставятся раньше).
-# Namespace совпадает с именем chart; релиз gitlab задаёт имена ресурсов GitLab.
-# logins — значения Helm, которые chart не умеет читать из Secret: Ansible
-# берёт их из ключа username Secret (из Vault) в namespace релиза.
+# Порядок установки; namespace = имя chart. logins — значения Helm, которые chart
+# не читает из Secret: берутся из ключа username Secret (из Vault) namespace релиза.
 platform_releases:
   - name: platform-db
     chart: db
@@ -35,7 +30,6 @@ platform_releases:
   # После cicd: политика монтирования папок использует CRD Kyverno.
   - { name: platform-app, chart: app }
 
-# Все charts, зависимости которых проверяются при up.
 platform_dependency_charts: "{{ ['foundation', 'secret', 'proxy', 'gpu'] + platform_releases | map(attribute='chart') | list }}"
 
 platform_proxy_values: "{{ lookup('file', platform_charts + '/proxy/values.yaml') | from_yaml }}"
@@ -47,7 +41,6 @@ platform_ingress_service: "{{ platform_proxy_values['ingress-nginx'].fullnameOve
 # ConfigMap с CA *.local: DaemonSet node-hosts (proxy) и задачи GitLab Runner (cicd).
 platform_ca_namespaces: [proxy, cicd]
 
-# Секреты, которые Vault Secrets Operator синхронизирует в namespace.
 platform_vault_secrets: "{{ (lookup('file', platform_charts + '/secret/values.yaml') | from_yaml).secrets }}"
 # "namespace/имя" обязательных Secret через пробел.
 platform_required_secrets: >-
@@ -55,10 +48,8 @@ platform_required_secrets: >-
   {% for name, secret in secrets.items() if not secret.optional | default(false) -%}
   {{ namespace }}/{{ name }} {% endfor %}{% endfor %}
 
-# Значения секретов, которые записываются в Vault при его инициализации;
-# null — случайный пароль из 32 символов. Пути — из k8s/secret/values.yaml.
-# username — логин сервиса; у postgres, redis, gitlab-root и argocd имя
-# задано самим сервисом и хранится для справки.
+# Записываются в Vault при инициализации; null — случайный пароль из 32 символов.
+# Логины postgres, redis, gitlab-root и argocd задаёт сам сервис (здесь — для справки).
 platform_vault_seed:
   db/postgresql: { username: postgres, password: null }
   db/gitlab: { username: gitlab, password: null }
@@ -76,3 +67,6 @@ platform_vault_seed:
   logs/grafana: { username: admin, password: null }
   logs/smtp: { username: infra-alerts@example.com, password: change-me }
   cicd/argocd: { username: admin, password: null }
+  app/postgresql: { username: app, password: null }
+  app/clickhouse: { username: app, password: null }
+  app/minio: { username: app, password: null }

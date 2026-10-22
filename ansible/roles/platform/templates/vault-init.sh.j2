@@ -1,6 +1,6 @@
 #!/bin/sh
 # Выполняется внутри pod vault-0; секреты передаются через stdin, а не аргументы.
-# Каждый шаг повторяем: при сбое настройку можно продолжить с root token.
+# Повторяемо: каждый шаг проверяет, сделан ли он. Root token отзывается в конце.
 set -eu
 
 {% if platform_vault_keys is defined %}
@@ -9,6 +9,7 @@ vault operator unseal '{{ key }}' >/dev/null
 {% endfor %}
 {% endif %}
 export VAULT_TOKEN='{{ platform_vault_root }}'
+trap 'vault token revoke -self >/dev/null' EXIT
 
 vault auth list | grep -q '^kubernetes/' || vault auth enable kubernetes
 vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc
@@ -27,8 +28,7 @@ vault write auth/kubernetes/role/platform-{{ namespace }} \
   policies=platform-{{ namespace }} ttl=1h
 {% endfor %}
 
-# Пользователь admin (UI и CLI): управление секретами kv. Пароль задаётся
-# только при создании пользователя.
+# Пользователь admin: только секреты kv.
 vault policy write operator - <<'EOF'
 path "kv/data/*" { capabilities = ["create", "read", "update", "delete", "list"] }
 path "kv/metadata/*" { capabilities = ["read", "list", "delete"] }
@@ -39,11 +39,17 @@ if ! vault read auth/userpass/users/admin >/dev/null 2>&1; then
   echo admin-created
 fi
 
-# Начальные значения секретов: только для путей, которых ещё нет.
+# Начальное значение (stdin) записывается, только если ключа ещё нет.
+seed() {
+  vault kv get -mount=kv -field="$2" "$1" >/dev/null 2>&1 && return
+  if vault kv get -mount=kv "$1" >/dev/null 2>&1; then
+    vault kv patch -mount=kv "$1" "$2=-" >/dev/null
+  else
+    vault kv put -mount=kv "$1" "$2=-" >/dev/null
+  fi
+}
 {% for path, keys in platform_vault_seed.items() %}
-vault kv get -mount=kv {{ path }} >/dev/null 2>&1 || vault kv put -mount=kv {{ path }} - >/dev/null <<'EOF'
-{ {% for key, value in keys.items() %}{{ key | to_json }}: {{ (value if value is not none else lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits')) | to_json }}{{ ', ' if not loop.last }}{% endfor %} }
-EOF
+{% for key, value in keys.items() %}
+printf '%s' {{ (value if value is not none else lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits')) | quote }} | seed {{ path }} {{ key }}
 {% endfor %}
-
-vault token revoke -self >/dev/null
+{% endfor %}

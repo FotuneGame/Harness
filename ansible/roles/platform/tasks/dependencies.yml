@@ -1,8 +1,6 @@
 ---
-# Зависимости charts (charts/*.tgz) приводятся к Chart.yaml при каждом up.
-# Chart пересобирается, если набор архивов в charts/ не совпадает с Chart.yaml:
-# зависимости нет, версия другая или остался архив удалённой зависимости
-# (Helm установил бы и его).
+# charts/*.tgz пересобираются, если не совпадают с Chart.yaml (лишний архив
+# Helm тоже установил бы).
 - name: Charts с устаревшими зависимостями
   ansible.builtin.shell: |
     for chart in {{ platform_dependency_charts | join(' ') }}; do

@@ -1,0 +1,33 @@
+# Общие значения окружений; отличия — в values-<env>.yaml.
+# Тег образа (image.tag в values-<env>.yaml) обновляет CI (.gitlab-ci.yml).
+image:
+  repository: registry.local/group/node-example
+  tag: latest
+# Secret deploy token GitLab (README платформы: «Образ из registry»).
+imagePullSecret: gitlab-registry
+
+replicas: 1
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# Переменные окружения (src/config.ts). Пароли не здесь: они в Secret из
+# Vault (namespace app), см. templates/deployment.yaml.
+env:
+  PORT: "3000"
+  POSTGRES_HOST: postgresql.db.svc.cluster.local
+  REDIS_HOST: redis-master.db.svc.cluster.local
+  CLICKHOUSE_URL: http://clickhouse.db.svc.cluster.local:8123
+  ELASTICSEARCH_URL: http://elasticsearch.db.svc.cluster.local:9200
+  KAFKA_BROKERS: kafka.mb.svc.cluster.local:9092
+  S3_URL: http://minio.backup.svc.cluster.local:9000
+  S3_BUCKET: app
+  LLM_URL: http://llama.llm.svc.cluster.local:8080
+  KEYCLOAK_ISSUER: https://keycloak.local/realms/master
+  KEYCLOAK_JWKS_URL: http://keycloak.acl.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs
+  OTLP_URL: http://jaeger.logs.svc.cluster.local:4318
+  # Папку монтирует Kyverno: volumes/app/<имя Argo CD Application>.
+  APP_DATA_PATH: /app-data

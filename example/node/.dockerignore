@@ -1,0 +1,7 @@
+dist
+node_modules
+app-data
+deploy
+scripts
+.env
+.git

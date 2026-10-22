@@ -1,5 +1,5 @@
 ---
-# Права файлов на дисках Windows (chmod для ключей, данных БД в volumes/).
+# chmod на дисках Windows: ключи и данные БД в volumes/.
 - name: Опция metadata для дисков Windows
   become: true
   community.general.ini_file:
@@ -41,7 +41,6 @@
   changed_when: false
   register: host_windows_script
 
-# Браузер в Windows разрешает *.local через hosts Windows (запросит UAC).
 - name: Имена *.local в hosts Windows
   ansible.builtin.command:
     argv:

@@ -19,7 +19,6 @@ global:
     enabled: false
     installEnvoy: false
 
-# Релиз называется gitlab: ресурсы gitlab-webservice-default, gitlab-gitaly и т. д.
 gitlab:
   global:
     edition: ce
@@ -81,9 +80,7 @@ gitlab:
     registry:
       enabled: true
       host: registry.local
-      # API registry (templates/registry.yaml): удаление тегов, cleanup policies,
-      # список тегов в UI. serviceName chart дополнил бы префиксом релиза
-      # (gitlab-registry), поэтому адрес задан целиком.
+      # Адрес целиком: serviceName chart дополнил бы префиксом gitlab-.
       api:
         protocol: http
         host: registry.vcs.svc.cluster.local

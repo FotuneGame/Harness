@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# Использование: retry-downloading.sh <namespace> <команда ожидания...>
-# Выполняет команду (helm --wait, kubectl wait, kubectl rollout status) и
-# повторяет её после таймаута, пока в namespace скачиваются образы или файлы:
-# медленная загрузка не считается ошибкой. Другие ошибки возвращаются сразу.
+# retry-downloading.sh <namespace> <команда ожидания...>
+# Повторяет команду после таймаута, пока в namespace скачиваются образы или файлы.
 set -uo pipefail
 namespace=$1
 shift
 attempts=${RETRY_ATTEMPTS:-12}
 
-# Первая загрузка в namespace: неготовый под, у которого последнее событие —
-# Pulling, временная ошибка скачивания образа (не «не найден» и не «нет
-# доступа») или работающий init-контейнер download-* (модель llama.cpp).
+# Загрузка: последнее событие пода Pulling, временная ошибка скачивания образа
+# или работающий init-контейнер download-* (модель llama.cpp).
 downloading() {
   jq -rn --slurpfile pods <(kubectl get pods -n "$namespace" -o json) \
     --slurpfile events <(kubectl get events -n "$namespace" -o json) '

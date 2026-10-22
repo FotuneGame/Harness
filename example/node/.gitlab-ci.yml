@@ -1,0 +1,65 @@
+# check → build (образ в registry.local) → deploy (тег образа в
+# deploy/values-<env>.yaml; Argo CD разворачивает изменения из Git).
+# dev — автоматически из основной ветки, stage — вручную оттуда же,
+# prod — вручную из тега. Переменная CI/CD GITOPS_TOKEN — project access
+# token с ролью Developer и правом write_repository.
+stages: [check, build, deploy]
+
+check:
+  stage: check
+  image: node:24-alpine
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm run lint
+    - npm run build
+  cache:
+    key: { files: [package-lock.json] }
+    paths: [.npm/]
+
+build:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  script:
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+    # CA *.local в задачах CI монтирует платформа.
+    - /kaniko/executor
+      --context "$CI_PROJECT_DIR"
+      --destination "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+      --registry-certificate "$CI_REGISTRY=/etc/docker/certs.d/registry.local/ca.crt"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_TAG
+
+.deploy:
+  stage: deploy
+  image: alpine:3.22
+  script:
+    - apk add --no-cache git
+    - git fetch origin "$CI_DEFAULT_BRANCH"
+    - git checkout -B "$CI_DEFAULT_BRANCH" "origin/$CI_DEFAULT_BRANCH"
+    - sed -i "s/^  tag: .*/  tag: $CI_COMMIT_SHORT_SHA/" "deploy/values-$DEPLOY_ENV.yaml"
+    - git diff --quiet && exit 0
+    - git -c user.name="GitLab CI" -c user.email="ci@gitlab.local"
+      commit -am "deploy $DEPLOY_ENV: $CI_COMMIT_SHORT_SHA [skip ci]"
+    - git push "$(echo "$CI_REPOSITORY_URL" | sed "s#//[^@]*@#//oauth2:$GITOPS_TOKEN@#")" "$CI_DEFAULT_BRANCH"
+
+deploy-dev:
+  extends: .deploy
+  variables: { DEPLOY_ENV: dev }
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy-stage:
+  extends: .deploy
+  variables: { DEPLOY_ENV: stage }
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+
+deploy-prod:
+  extends: .deploy
+  variables: { DEPLOY_ENV: prod }
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual

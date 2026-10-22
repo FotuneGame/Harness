@@ -1,10 +1,6 @@
 ---
-# Видеокарта доступна узлам с долей VRAM (terraform/variables.tf, nodes.*.vram_mib).
-#   Ubuntu — HAMi: доли VRAM узлов и лимит VRAM каждого пода.
-#   WSL2   — NVIDIA device plugin: только доступ к GPU. Библиотека HAMi-core,
-#            ограничивающая VRAM, падает с CUDA из WSL2 (segfault при запуске).
-# llama.cpp получает GPU, если у узла llms есть доля VRAM и Kubernetes видит
-# ресурс nvidia.com/gpu; иначе работает на CPU.
+# Ubuntu — HAMi (доли и лимиты VRAM), WSL2 — NVIDIA device plugin: HAMi-core
+# падает с CUDA из WSL2. Без ресурса nvidia.com/gpu llama.cpp работает на CPU.
 - name: GPU по умолчанию выключен
   ansible.builtin.set_fact:
     platform_gpu_nodes: "{{ platform_tf.gpu_nodes }}"

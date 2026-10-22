@@ -1,6 +1,5 @@
 {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
 ---
-# Grafana sidecar подключает ConfigMap с меткой grafana_dashboard.
 apiVersion: v1
 kind: ConfigMap
 metadata:

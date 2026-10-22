@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Prometheus собирает /metrics (дашборды — Grafana).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
