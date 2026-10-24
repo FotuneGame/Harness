@@ -88,6 +88,15 @@ resource "terraform_data" "cluster" {
       set -euo pipefail
       test -f "$HOME/.minikube/files${local.encryption_config}" || {
         echo "Нет ключа шифрования etcd: сначала выполните ./cluster.sh up" >&2; exit 1; }
+      # Остатки прежнего кластера этого профиля (например, после переустановки
+      # WSL ~/.minikube новый, а контейнеры и тома Docker старые): их
+      # сертификаты не подходят к новому CA, minikube start на них падает.
+      minikube delete --profile ${local.profile} >/dev/null 2>&1 || true
+      stale='^${local.profile}(-m[0-9]+)?$'
+      docker ps -a --filter label=created_by.minikube.sigs.k8s.io=true --format '{{.Names}}' \
+        | { grep -E "$stale" || true; } | xargs -r docker rm -f
+      docker volume ls --filter label=created_by.minikube.sigs.k8s.io=true --format '{{.Name}}' \
+        | { grep -E "$stale" || true; } | xargs -r docker volume rm
       gpus=()
       if ${var.gpu} && docker run --rm --gpus all ubuntu:22.04 nvidia-smi -L >/dev/null 2>&1; then
         gpus=(--gpus all)

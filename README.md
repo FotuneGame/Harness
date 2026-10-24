@@ -56,11 +56,13 @@ Minikube из трёх узлов. Terraform создаёт узлы, Ansible у
 Проброс отдельного сервиса (закрывается Ctrl+C):
 
 ```bash
-kubectl port-forward -n db svc/postgresql 5432:5432
+kubectl port-forward -n llm svc/open-webui 80:8080
 ```
 
 Доверие к HTTPS-сертификату `*.local` (один раз после первого `up`, затем
-перезапустите браузер). Windows 11, из терминала WSL в корне репозитория:
+перезапустите браузер). 
+
+Windows 11, из терминала WSL в корне репозитория:
 
 ```bash
 certutil.exe -user -addstore Root "$(wslpath -w volumes/proxy/tls/ca.crt)"
@@ -135,8 +137,9 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
   показывает предупреждение о сертификате. CA действует только для имён `*.local`.
 - `ports open 0.0.0.0` открывает сервисы в сеть; Prometheus, Alertmanager,
   Jaeger, Kafka UI и RedisInsight работают без авторизации.
-- Данные хранятся в `volumes/` (в Git не попадают). Удаляйте каталог только
-  целиком: пароли в Vault (`volumes/secret`) и данные БД связаны.
+- Данные хранятся в `volumes/` (в Git не попадают), там же state Terraform
+  (`volumes/terraform`). Удаляйте каталог только целиком: пароли в Vault
+  (`volumes/secret`) и данные БД связаны.
 - Приложения Argo CD разворачивайте в namespace `app`: поды автоматически
   попадают на узел apps и получают папку `volumes/app/<приложение>` в `/app-data`
   (имя — метка `app.kubernetes.io/instance`, иначе `app.kubernetes.io/name`, иначе

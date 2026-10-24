@@ -54,10 +54,19 @@ install_ansible() {
 # Вывод с ходом долгих задач: ansible/callback_plugins/progress.py.
 playbook() { ANSIBLE_STDOUT_CALLBACK=progress ansible-playbook -i ansible/inventory.ini "$@"; }
 
+# State Terraform — в volumes/terraform; прежний terraform/terraform.tfstate
+# переносится туда при первом запуске.
+tf_init() {
+  terraform -chdir=terraform init -input=false -migrate-state -force-copy >/dev/null
+  if [ -f volumes/terraform/terraform.tfstate ]; then
+    rm -f terraform/terraform.tfstate terraform/terraform.tfstate.backup
+  fi
+}
+
 # Узлы создаёт Terraform; остановленный кластер запускается с прежними параметрами.
 provision() {
   log "Terraform: узлы кластера"
-  terraform -chdir=terraform init -input=false >/dev/null
+  tf_init
   local replace=()
   if terraform -chdir=terraform state list 2>/dev/null | grep -qx terraform_data.cluster && ! cluster_exists; then
     replace=(-replace=terraform_data.cluster)
@@ -96,7 +105,7 @@ cmd_start() {
   require_cluster
   log "Запуск кластера"
   minikube start --profile "$PROFILE"
-  cmd_unseal
+  unseal_vault
 }
 
 cmd_stop() {
@@ -110,11 +119,25 @@ cmd_restart() {
   cmd_start
 }
 
-# Vault запечатывается при каждом перезапуске pod: нужны 3 из 5 unseal key.
+# Vault работает в кластере (pod vault-0) и запечатывается при каждом
+# перезапуске pod: нужны 3 из 5 unseal key.
 cmd_unseal() {
+  require_cluster
+  cluster_running || {
+    echo "Кластер остановлен: выполните ./cluster.sh start (он разблокирует Vault)." >&2
+    exit 1
+  }
+  unseal_vault
+}
+
+unseal_vault() {
   kubectl wait pod/vault-0 -n secret --for=jsonpath='{.status.phase}'=Running --timeout=10m >/dev/null
   if [ "$(vault_status initialized)" != true ]; then
     echo "Vault ещё не инициализирован: его настроит ./cluster.sh up."
+    return
+  fi
+  if [ "$(vault_status sealed)" != true ]; then
+    echo "Vault уже разблокирован."
     return
   fi
   local key
@@ -219,11 +242,24 @@ cmd_status() {
 }
 
 cmd_delete() {
+  local answer
   read -rp "Удалить кластер? Данные в volumes/ сохранятся. [y/N] " answer
-  [ "$answer" = y ] || exit 0
+  answer=${answer// /}
+  # «у» — кириллическая буква, в терминале неотличима от латинской y.
+  case "${answer,,}" in
+    y | yes | у | д | да) ;;
+    "") echo "Удаление отменено."; exit 0 ;;
+    *) echo "Удаление отменено: ответ «$answer» не y/да."; exit 0 ;;
+  esac
   ports_close
-  terraform -chdir=terraform init -input=false >/dev/null
+  log "Удаление кластера"
+  tf_init
   terraform -chdir=terraform destroy -input=false -auto-approve
+  # Кластер, которого нет в state Terraform (например, state удалён).
+  if cluster_exists; then
+    minikube delete --profile "$PROFILE"
+  fi
+  echo "Кластер удалён. Данные в volumes/ сохранены."
 }
 
 case "${1:-help}" in

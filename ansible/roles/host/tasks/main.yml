@@ -161,5 +161,10 @@
   ansible.builtin.assert:
     that: host_docker_info.rc == 0
     fail_msg: >-
+      {% if 'permission denied' in host_docker_info.stderr | default('') | lower -%}
+      Нет доступа к Docker: терминал открыт до добавления в группу docker.
+      Откройте терминал заново (или выполните newgrp docker) и повторите ./cluster.sh up.
+      {%- else -%}
       Docker недоступен. {{ 'Запустите Docker Desktop и включите Settings → Resources →
       WSL integration для этого дистрибутива.' if host_is_wsl | bool else 'Проверьте службу docker.' }}
+      {%- endif %}
