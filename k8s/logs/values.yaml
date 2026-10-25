@@ -27,8 +27,8 @@ kube-prometheus-stack:
     config:
       global:
         resolve_timeout: 5m
-        smtp_smarthost: smtp.example.com:587
-        smtp_from: infra-alerts@example.com
+        smtp_smarthost: smtp.yandex.ru:587
+        smtp_from: g.t1tov@yandex.ru
         smtp_hello: devops.local
         smtp_require_tls: true
         # Логин (smtp_auth_username) — из Vault, его передаёт Ansible.
@@ -38,21 +38,33 @@ kube-prometheus-stack:
         group_interval: 5m
         repeat_interval: 4h
         receiver: email
+      # Шаблоны писем — ConfigMap из templates/emails/ (alertmanagerSpec.configMaps).
+      templates: ["/etc/alertmanager/configmaps/alertmanager-email-templates/*.tmpl"]
       receivers:
         # Служебный алерт Watchdog по умолчанию направляется в receiver "null".
         - name: "null"
         - name: email
           email_configs:
-            - to: infra-alerts@example.com
+            - to: titovgrisha04@gmail.com
               send_resolved: true
               auth_password_file: /etc/alertmanager/secrets/smtp-credentials/password
+              headers:
+                Subject: '{{ template "email.subject" . }}'
+              html: '{{ template "email.html" . }}'
     alertmanagerSpec:
+      # Адрес в ссылках писем.
+      externalUrl: https://alert.local
       nodeSelector:
         platform.node: core
+      configMaps:
+        - alertmanager-email-templates
       secrets:
         - smtp-credentials
       storage:
         volumeClaimTemplate:
+          # Короткое имя PVC: K8up называет том пода копии именем PVC (≤ 63 символов).
+          metadata:
+            name: data
           spec:
             volumeName: pv-logs-alertmanager
             storageClassName: local
@@ -89,9 +101,15 @@ kube-prometheus-stack:
       dashboards:
         enabled: true
         label: grafana_dashboard
+    # Стартовая страница — дашборд Platform overview (templates/dashboards/).
+    grafana.ini:
+      dashboards:
+        default_home_dashboard_path: /tmp/dashboards/platform-overview.json
 
   prometheus:
     prometheusSpec:
+      # Адрес ссылки «график в Prometheus» в письмах.
+      externalUrl: https://prometheus.local
       nodeSelector:
         platform.node: core
       retention: 7d

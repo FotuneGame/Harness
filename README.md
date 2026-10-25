@@ -63,6 +63,8 @@ https://platform.local/dev/kibana. ClickHouse Play:
 | Состояние | `./cluster.sh status` |
 | Удаление (данные в `volumes/` сохраняются) | `./cluster.sh delete` |
 | Разблокировка Vault | `./cluster.sh unseal` |
+| Список резервных копий | `./cluster.sh backups` |
+| Восстановление PVC | `./cluster.sh restore <namespace> <pvc> [ID]` |
 
 Флаги `--dev`, `--stage`, `--prod` можно сочетать: `./cluster.sh up --dev --stage`.
 Флаги действуют на namespace окружения (`db`, `mb`, `llm`, `acl`, `app`), общие
@@ -125,7 +127,9 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
     Изменение в Vault позже не меняет уже созданные учётные записи; исключение —
     пароль Argo CD, он применяется при следующем `up`.
   - Заполняются вручную, затем `./cluster.sh up`:
-    - `logs/smtp` — почта для оповещений Alertmanager (замените `password`);
+    - `logs/smtp` — почта для оповещений Alertmanager: `username` — адрес
+      ящика, `password` — пароль приложения почты; сервер, отправитель и
+      получатели — `alertmanager.config` в `k8s/logs/values.yaml`;
     - `cicd/gitlab-runner` — `runner-token` и `runner-registration-token`
       (пока пути нет, GitLab Runner выключен);
     - `cicd/argocd-gitlab` — доступ Argo CD к репозиториям GitLab: `type=git`,
@@ -139,6 +143,17 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
   ```bash
   kubectl get secret -n app-dev gitlab-registry
   ```
+
+- Проверка уведомлений Alertmanager — тестовая тревога, письмо приходит примерно
+  через 30 секунд:
+
+  ```bash
+  kubectl exec -n logs alertmanager-logs-alertmanager-0 -c alertmanager -- amtool alert add TestAlert severity=warning --annotation=summary="Проверка" --alertmanager.url=http://localhost:9093
+  ```
+
+  Если письма нет, на https://alert.local появится тревога
+  `AlertmanagerFailedToSendAlerts`, причина — в журнале:
+  `kubectl logs -n logs alertmanager-logs-alertmanager-0 -c alertmanager --tail=20`.
 
 - https://registry.local — API Container Registry без веб-интерфейса (в браузере
   пустая страница): `docker login registry.local`, образы видны в GitLab
@@ -199,4 +214,6 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
 - GPU: в Ubuntu нужен драйвер NVIDIA (Container Toolkit ставится
   автоматически). Видеокарту делят llama.cpp трёх окружений (HAMi — по трети
   VRAM, WSL2 — time-slicing); если GPU недоступен, llama.cpp работает на CPU.
+- LLM по умолчанию — [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
+  (GGUF Q4_K_M); требования, адреса и смена модели — [k8s/llm/README.md](k8s/llm/README.md).
 - Как менять и добавлять сервисы, папки, тома и маршруты — [k8s/README.md](k8s/README.md).

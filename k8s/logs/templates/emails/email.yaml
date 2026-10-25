@@ -1,0 +1,36 @@
+# Шаблоны писем Alertmanager: тема «ТРЕВОГА/РЕШЕНО: имя (namespace)», по каждой
+# тревоге — что случилось, где, важность, время (UTC) и ссылки. Подключены в
+# values.yaml (alertmanagerSpec.configMaps, config.templates). Текст — сырая строка
+# Helm в обратных кавычках: синтаксис Alertmanager Helm не разбирает.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-email-templates
+data:
+  email.tmpl: |
+{{- `
+{{ define "email.subject" }}{{ if eq .Status "firing" }}ТРЕВОГА{{ else }}РЕШЕНО{{ end }}: {{ .CommonLabels.alertname }}{{ with .CommonLabels.namespace }} ({{ . }}){{ end }}{{ if gt (len .Alerts) 1 }} — {{ len .Alerts }} шт.{{ end }}{{ end }}
+
+{{ define "email.html" }}
+<div style="font-family:Arial,sans-serif;font-size:14px">
+<h2 style="color:{{ if eq .Status "firing" }}#c62828{{ else }}#2e7d32{{ end }}">
+  {{ if eq .Status "firing" }}Тревога{{ else }}Решено{{ end }}: {{ .CommonLabels.alertname }}
+</h2>
+{{ range .Alerts }}
+<table cellpadding="6" style="border-collapse:collapse;margin-bottom:16px;border:1px solid #ddd">
+  <tr><td><b>Что случилось</b></td><td>{{ or .Annotations.summary .Labels.alertname }}</td></tr>
+  {{ with .Annotations.description }}<tr><td><b>Подробно</b></td><td>{{ . }}</td></tr>{{ end }}
+  <tr><td><b>Важность</b></td><td>{{ if eq .Labels.severity "critical" }}критично{{ else if eq .Labels.severity "warning" }}предупреждение{{ else }}{{ .Labels.severity }}{{ end }}</td></tr>
+  <tr><td><b>Где</b></td><td>{{ with .Labels.namespace }}namespace {{ . }}{{ end }}{{ with .Labels.pod }}, под {{ . }}{{ end }}{{ with .Labels.node }}, узел {{ . }}{{ end }}</td></tr>
+  <tr><td><b>Началась</b></td><td>{{ .StartsAt.Format "02.01.2006 15:04:05" }} UTC</td></tr>
+  {{ if eq .Status "resolved" }}<tr><td><b>Закончилась</b></td><td>{{ .EndsAt.Format "02.01.2006 15:04:05" }} UTC</td></tr>{{ end }}
+  <tr><td><b>Ссылки</b></td><td>
+    {{ with .GeneratorURL }}<a href="{{ . }}">график в Prometheus</a>{{ end }}
+    {{ with .Annotations.runbook_url }} · <a href="{{ . }}">что делать</a>{{ end }}
+  </td></tr>
+</table>
+{{ end }}
+<p><a href="{{ .ExternalURL }}">Все тревоги</a> · <a href="https://grafana.local">Grafana</a></p>
+</div>
+{{ end }}
+` | indent 4 }}

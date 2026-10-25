@@ -165,6 +165,20 @@
     label: "{{ release.name }}"
   when: release.env is not defined or release.env in platform_envs or release.shared | default(false)
 
+- name: PVC Alertmanager с коротким именем
+  ansible.builtin.shell: |
+    set -eu
+    old=alertmanager-logs-alertmanager-db-alertmanager-logs-alertmanager-0
+    kubectl get pvc -n logs "$old" >/dev/null 2>&1 || exit 0
+    kubectl delete statefulset -n logs alertmanager-logs-alertmanager --wait >/dev/null
+    kubectl delete pvc -n logs "$old" --timeout=2m >/dev/null
+    kubectl patch pv pv-logs-alertmanager --type merge -p '{"spec":{"claimRef":null}}' >/dev/null
+    until kubectl get statefulset -n logs alertmanager-logs-alertmanager >/dev/null 2>&1; do sleep 2; done
+    kubectl rollout status statefulset -n logs alertmanager-logs-alertmanager --timeout=5m >/dev/null
+    echo changed
+  register: platform_alertmanager_pvc
+  changed_when: "'changed' in platform_alertmanager_pvc.stdout"
+
 - name: Ключи шифрования GitLab из кластера
   ansible.builtin.shell: >-
     kubectl get secret -n vcs gitlab-rails-secret -o json

@@ -25,7 +25,7 @@
 | Действие | Команда |
 |---|---|
 | Размер данных | `sudo du -sh volumes/*` |
-| Резервные копии | `kubectl get backups,snapshots -A` |
+| Список копий и восстановление | `./cluster.sh backups`, `./cluster.sh restore <namespace> <pvc> [ID]` |
 | Полная очистка (сначала `./cluster.sh delete`) | `sudo find volumes -mindepth 1 ! -name .gitkeep ! -name README.md -delete 2>/dev/null` |
 
 ## Важно

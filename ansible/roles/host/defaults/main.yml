@@ -6,6 +6,7 @@ host_packages:
   - ca-certificates
   - conntrack
   - curl
+  - gettext-base
   - gnupg
   - jq
   - libcap2-bin

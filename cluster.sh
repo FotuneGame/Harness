@@ -33,6 +33,9 @@ usage() {
   status                узлы, окружения, проблемные pod, Vault, проброс
   delete                удаление кластера (с флагами — сервисов окружений);
                         данные в volumes/ сохраняются
+  backups               список резервных копий
+  restore <namespace> <pvc> [ID]
+                        восстановление PVC из копии (без ID — последняя)
 EOF
 }
 
@@ -246,6 +249,87 @@ backups_catch_up() {
            spec: {backend: .spec.backend, podSecurityContext: .spec.backup.podSecurityContext}}' <<<"$schedule" |
         kubectl create -f - >/dev/null && echo "Резервная копия $namespace запущена (не было за сутки)."
     done
+}
+
+# Копии K8up: namespace, PVC, дата и ID (первые 8 символов).
+snapshots_list() {
+  {
+    printf 'NAMESPACE\tPVC\tДАТА\tID\n'
+    kubectl get snapshots.k8up.io -A -o json | jq -r '.items[]
+      | [.metadata.namespace, (.spec.paths[0] | sub("^/data/"; "")), .spec.date, .spec.id[0:8]] | @tsv' | sort
+  } | column -t -s $'\t'
+}
+
+pods_with_pvc() {
+  kubectl get pods -n "$1" -o json | jq -r --arg pvc "$2" '.items[]
+    | select(.status.phase == "Pending" or .status.phase == "Running")
+    | select(any(.spec.volumes[]?; .persistentVolumeClaim.claimName == $pvc)) | .metadata.name'
+}
+
+# Восстановление PVC из копии (k8s/backup/restore/*.yaml): сервисы с этим PVC
+# останавливаются, текущие данные переносятся в .before-restore-<время> в том же
+# томе, файлы копии ложатся на их место, сервисы запускаются снова.
+restore_pvc() {
+  local ns=$1 pvc=$2 id=${3:-} snapshot bucket name keep pod owner kind replicas
+  local -a stopped=()
+  snapshot=$(kubectl get snapshots.k8up.io -n "$ns" -o json | jq -r --arg path "/data/$pvc" --arg id "$id" '
+    [.items[] | select(.spec.paths | index($path)) | select(.spec.id | startswith($id))]
+    | sort_by(.spec.date) | last | .spec.id // empty')
+  [ -n "$snapshot" ] || { echo "Нет копии $ns/$pvc${id:+ с ID $id}. Список: ./cluster.sh backups" >&2; exit 1; }
+  bucket=$(kubectl get schedules.k8up.io -n "$ns" backup -o jsonpath='{.spec.backend.s3.bucket}')
+  name="restore-$pvc-$(date +%Y%m%d%H%M%S)"
+  keep=".before-restore-$(date +%Y%m%d-%H%M%S)"
+  confirm "Восстановить $ns/$pvc из копии ${snapshot:0:8}? Сервисы с этим PVC остановятся, текущие данные перенесутся в $keep в том же томе."
+
+  argo_autosync "$ns" false
+  for pod in $(pods_with_pvc "$ns" "$pvc"); do
+    owner=$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}')
+    if [[ $owner == ReplicaSet/* ]]; then
+      owner=Deployment/$(kubectl get -n "$ns" "$owner" -o jsonpath='{.metadata.ownerReferences[0].name}')
+    fi
+    # Поды Job (копия K8up) не останавливаются — их окончания ждёт цикл ниже.
+    [[ $owner == Deployment/* || $owner == StatefulSet/* ]] || continue
+    [[ " ${stopped[*]} " == *" $owner="* ]] && continue
+    replicas=$(kubectl get -n "$ns" "$owner" -o jsonpath='{.spec.replicas}')
+    kubectl scale -n "$ns" "$owner" --replicas=0 >/dev/null
+    stopped+=("$owner=$replicas")
+    echo "Остановлен $owner"
+  done
+  while [ -n "$(pods_with_pvc "$ns" "$pvc")" ]; do sleep 2; done
+
+  export NAME=$name NAMESPACE=$ns PVC=$pvc SNAPSHOT=$snapshot BUCKET=$bucket KEEP=$keep
+  render() { envsubst '${NAME} ${NAMESPACE} ${PVC} ${SNAPSHOT} ${BUCKET} ${KEEP}' <"k8s/backup/restore/$1.yaml"; }
+  render prepare | kubectl apply -f - >/dev/null
+  kubectl wait pod -n "$ns" "$name-prepare" --for=jsonpath='{.status.phase}'=Succeeded --timeout=10m >/dev/null
+  kubectl delete pod -n "$ns" "$name-prepare" >/dev/null
+  echo "Текущие данные перенесены в $keep."
+
+  render restore | kubectl apply -f - >/dev/null
+  echo "Восстановление ${snapshot:0:8} (ход: kubectl get restore -n $ns $name)..."
+  kubectl wait restore.k8up.io -n "$ns" "$name" --for=jsonpath='{.status.finished}'=true --timeout=60m >/dev/null
+  kubectl get restore.k8up.io -n "$ns" "$name" -o json |
+    jq -e 'any(.status.conditions[]?; .type == "Completed" and .reason == "Succeeded")' >/dev/null ||
+    echo "Восстановление завершилось с ошибкой: kubectl describe restore -n $ns $name" >&2
+
+  for owner in "${stopped[@]}"; do
+    kubectl scale -n "$ns" "${owner%=*}" --replicas="${owner#*=}" >/dev/null
+    echo "Запущен ${owner%=*}"
+  done
+  argo_autosync "$ns" true
+  echo "Готово. Прежние данные — в $keep внутри тома (volumes/...): удалите их, когда убедитесь в результате."
+}
+
+cmd_backups() {
+  require_running
+  snapshots_list
+  echo
+  echo "Восстановить: ./cluster.sh restore <namespace> <pvc> [ID] (без ID — последняя копия)"
+}
+
+cmd_restore() {
+  [ $# -ge 2 ] || { echo "Использование: ./cluster.sh restore <namespace> <pvc> [ID]; список копий — ./cluster.sh backups" >&2; exit 1; }
+  require_running
+  restore_pvc "$@"
 }
 
 cmd_up() {
@@ -530,6 +614,8 @@ set -- "${args[@]}"
 case "${1:-help}" in
   up | start | stop | restart | status | delete) "cmd_$1" ;;
   unseal) [ ${#ENVS[@]} -eq 0 ] || { usage; exit 1; }; cmd_unseal ;;
+  restore) shift; cmd_restore "$@" ;;
+  backups) cmd_backups ;;
   ports)
     case "${2:-}" in
       open) ports_open "${3:-}" ;;
