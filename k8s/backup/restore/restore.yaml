@@ -1,0 +1,17 @@
+# ./cluster.sh restore: восстановление PVC из копии K8up (restic). Файлы копии
+# ложатся в корень тома; от root — каталоги баз закрыты для других пользователей.
+apiVersion: k8up.io/v1
+kind: Restore
+metadata:
+  name: ${NAME}
+  namespace: ${NAMESPACE}
+spec:
+  snapshot: ${SNAPSHOT}
+  podSecurityContext:
+    runAsUser: 0
+  restoreMethod:
+    folder:
+      claimName: ${PVC}
+  backend:
+    s3:
+      bucket: ${BUCKET}

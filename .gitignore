@@ -12,10 +12,23 @@ terraform/crash*.log
 k8s/*/charts/*
 !k8s/secret/charts/*.tgz
 
-# Данные сервисов, ключи и сертификаты.
+# Данные сервисов, ключи и сертификаты. В Git — только .gitkeep трёх первых
+# уровней: глубже Git не заходит (данные баз большие, в них есть ссылки Linux).
 volumes/*
-volumes/**/*
-!volumes/**/
-!volumes/**/.gitkeep
+!volumes/*/
+volumes/*/*
+!volumes/*/.gitkeep
+!volumes/README.md
+!volumes/*/*/
+volumes/*/*/*
+!volumes/*/*/.gitkeep
+!volumes/*/*/*/
+volumes/*/*/*/*
+!volumes/*/*/*/.gitkeep
 
 **/__pycache__/
+
+.$Services.png.bkp
+.$Services.drawio.bkp
+
+screens

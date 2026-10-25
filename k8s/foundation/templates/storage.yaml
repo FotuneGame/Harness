@@ -4,12 +4,24 @@ metadata:
   name: local
 provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
-{{- range .Values.volumes }}
+{{- $volumes := .Values.volumes }}
+{{- range $env := .Values.environments.names }}
+{{- range $folder, $settings := $.Values.environments.folders }}
+{{- range $settings.volumes }}
+{{- $volumes = append $volumes (merge (dict
+      "path" (compact (list $folder $env .path) | join "/")
+      "claim" (printf "%s-%s/%s" $folder $env .claim)
+      "node" $settings.node) .) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $volumes }}
+{{- $name := printf "pv-%s" (replace "/" "-" .path) }}
 ---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: {{ .name }}
+  name: {{ $name }}
   {{- with .labels }}
   labels:
     {{- toYaml . | nindent 4 }}
@@ -35,4 +47,19 @@ spec:
             - key: platform.node
               operator: In
               values: [{{ .node | default "core" }}]
+{{- if .hostFiles }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ splitList "/" .claim | last }}
+  namespace: {{ splitList "/" .claim | first }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local
+  volumeName: {{ $name }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
 {{- end }}

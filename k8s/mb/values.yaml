@@ -1,19 +1,18 @@
-# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/. Реестр docker.io (а не registry-1.docker.io),
-# чтобы образы шли через зеркало Docker Hub (terraform/variables.tf, registry_mirrors).
+# Kafka окружения (namespace mb-<env>, узел core): KRaft, один узел совмещает
+# роли controller и broker. Без TLS и SASL: доступна только своему окружению.
+# ID кластера chart создаёт сам (Secret kafka-kraft); на уже размеченном диске
+# Kafka берёт его из meta.properties.
 global:
   imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
-# KRaft: один узел совмещает роли controller и broker.
-# Service kafka:9092, StatefulSet kafka-controller, PVC data-kafka-controller-0.
 kafka:
   fullnameOverride: kafka
   image:
     repository: bitnamilegacy/kafka
-  clusterId: MkU3OEVBNTcwNTJENDM2Qk
-  # Без TLS и SASL: Kafka доступна только внутри кластера.
+  networkPolicy:
+    enabled: false
   listeners:
     client:
       protocol: PLAINTEXT
@@ -29,33 +28,24 @@ kafka:
     group.initial.rebalance.delay.ms: 0
   controller:
     replicaCount: 1
-    nodeSelector:
-      platform.node: core
+    heapOpts: -Xmx256m -Xms256m
+    nodeSelector: { platform.node: core }
     persistence:
       storageClass: local
       size: 5Gi
     resources:
-      requests:
-        cpu: 250m
-        memory: 512Mi
+      requests: { cpu: 100m, memory: 512Mi }
   broker:
     replicaCount: 0
 
-# Deployment/Service kafka-ui (порт 80).
+# Путь веб-интерфейса — SERVER_SERVLET_CONTEXT_PATH в values-<env>.yaml.
 kafka-ui:
   fullnameOverride: kafka-ui
   envs:
     config:
-      KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka.mb.svc.cluster.local:9092
-  nodeSelector:
-    platform.node: core
+      KAFKA_CLUSTERS_0_NAME: kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      JAVA_OPTS: -Xmx192m
+  nodeSelector: { platform.node: core }
   resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-  autoscaling:
-    enabled: true
-    minReplicas: 1
-    maxReplicas: 3
-    targetCPUUtilizationPercentage: 75
+    requests: { cpu: 25m, memory: 256Mi }

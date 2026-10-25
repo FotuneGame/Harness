@@ -1,8 +1,8 @@
 terraform {
   required_version = ">= 1.9.0"
 
-  # State хранится локально (terraform/terraform.tfstate, исключён из Git).
+  # State — рядом с данными кластера в volumes/ (в Git не попадает).
   backend "local" {
-    path = "terraform.tfstate"
+    path = "../volumes/terraform/terraform.tfstate"
   }
 }

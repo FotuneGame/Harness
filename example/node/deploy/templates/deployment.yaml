@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      nodeSelector:
+        platform.node: apps
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: app
+          image: "{{ .Values.image }}:{{ required "imageTag записывает CI (deploy-<env>)" .Values.imageTag }}"
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: APP_NAME
+              value: {{ .Release.Name }}
+            {{- range $name, $value := .Values.env }}
+            - name: {{ $name }}
+              value: {{ tpl $value $ | quote }}
+            {{- end }}
+            {{- range $name, $ref := .Values.secretEnv }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef: { name: {{ $ref.secret }}, key: {{ $ref.key }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /health/live, port: http }
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            initialDelaySeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

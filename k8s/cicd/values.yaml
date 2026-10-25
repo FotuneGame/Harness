@@ -1,5 +1,3 @@
-# Приложения из Argo CD разворачиваются в namespace app (узел apps).
-# Доступ к GitLab: Secret argocd-gitlab-repository (Vault cicd/argocd-gitlab).
 argo-cd:
   fullnameOverride: argocd
   global:
@@ -9,13 +7,26 @@ argo-cd:
   configs:
     cm:
       url: https://argocd.local
-    # TLS завершается на ingress: сервер отдаёт HTTP, без перенаправления на
-    # HTTPS (иначе ERR_TOO_MANY_REDIRECTS).
+    # TLS завершается на ingress; иначе ERR_TOO_MANY_REDIRECTS.
     params:
       server.insecure: true
+  server:
+    resources: { requests: { cpu: 100m, memory: 256Mi } }
+  controller:
+    resources: { requests: { cpu: 100m, memory: 512Mi } }
+  repoServer:
+    resources: { requests: { cpu: 100m, memory: 256Mi } }
+  applicationSet:
+    resources: { requests: { cpu: 50m, memory: 128Mi } }
+  # Вход только пользователем admin: SSO (Dex) не нужен.
+  dex:
+    enabled: false
+  # Образ Docker Hub — через зеркало узлов (по умолчанию ecr-public.aws.com).
+  redis:
+    image:
+      repository: redis
 
-# Kyverno применяет политики к подам приложений (k8s/app): монтирует папку
-# volumes/app/<приложение>. Нужен только admission controller.
+# Kyverno монтирует папки приложений (k8s/app): нужен только admission controller.
 kyverno:
   global:
     nodeSelector:
@@ -38,6 +49,7 @@ gitlab-runner:
   nodeSelector:
     platform.node: core
   gitlabUrl: http://gitlab-webservice-default.vcs.svc.cluster.local:8181
+  concurrent: 2
   rbac:
     create: true
   runners:
@@ -51,13 +63,11 @@ gitlab-runner:
           privileged = false
           cpu_limit = "{{ .Values.jobLimits.cpu }}"
           memory_limit = "{{ .Values.jobLimits.memory }}"
-          # CA *.local (ConfigMap создаёт Ansible): docker login registry.local
-          # в задачах. Имя registry.local разрешает CoreDNS.
+          # CA *.local для docker login registry.local в задачах.
           [[runners.kubernetes.volumes.config_map]]
             name = "local-ca"
             mount_path = "/etc/docker/certs.d/registry.local/ca.crt"
             sub_path = "ca.crt"
-  # Лимиты job-подов (подставляются в runners.config).
   jobLimits:
     cpu: "1"
     memory: 1Gi

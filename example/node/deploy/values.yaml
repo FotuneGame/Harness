@@ -1,0 +1,33 @@
+# Окружение (dev, stage, prod) — stage в values-<env>.yaml; тег образа imageTag
+# там же, его записывает CI (deploy-<env>).
+image: registry.local/main/node
+imagePullSecret: gitlab-registry
+replicas: 1
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { memory: 512Mi }
+
+# Переменные приложения (src/config.ts); {{ .Values.stage }} — окружение.
+# Сервисы окружения — в namespace <папка>-<env>.
+env:
+  PORT: "3000"
+  POSTGRES_HOST: postgresql.db-{{ .Values.stage }}.svc.cluster.local
+  REDIS_HOST: redis-master.db-{{ .Values.stage }}.svc.cluster.local
+  CLICKHOUSE_URL: http://clickhouse.db-{{ .Values.stage }}.svc.cluster.local:8123
+  ELASTICSEARCH_URL: http://elasticsearch.db-{{ .Values.stage }}.svc.cluster.local:9200
+  KAFKA_BROKERS: kafka.mb-{{ .Values.stage }}.svc.cluster.local:9092
+  LLM_URL: http://llama.llm-{{ .Values.stage }}.svc.cluster.local:8080/{{ .Values.stage }}/llama
+  KEYCLOAK_ISSUER: https://platform.local/{{ .Values.stage }}/keycloak/realms/master
+  KEYCLOAK_JWKS_URL: http://keycloak.acl-{{ .Values.stage }}.svc.cluster.local:8080/{{ .Values.stage }}/keycloak/realms/master/protocol/openid-connect/certs
+  OTLP_URL: http://jaeger.logs.svc.cluster.local:4318
+  APP_DATA_PATH: /app-data
+
+# Логины и пароли — Secret из Vault db/<env>/*, которые платформа создаёт в app-<env>.
+secretEnv:
+  POSTGRES_USER: { secret: postgresql-credentials, key: username }
+  POSTGRES_DB: { secret: postgresql-credentials, key: username }
+  POSTGRES_PASSWORD: { secret: postgresql-credentials, key: password }
+  REDIS_PASSWORD: { secret: redis-credentials, key: password }
+  CLICKHOUSE_USER: { secret: clickhouse-credentials, key: username }
+  CLICKHOUSE_DB: { secret: clickhouse-credentials, key: username }
+  CLICKHOUSE_PASSWORD: { secret: clickhouse-credentials, key: password }

@@ -1,1 +1,12 @@
-# Переопределения values.yaml для окружения stage.
+# Веб-интерфейсы: https://platform.local/stage/<сервис>.
+redisinsight:
+  proxyPath: /stage/redis
+
+kibana:
+  configuration:
+    server:
+      basePath: /stage/kibana
+
+pgadmin4:
+  env:
+    contextPath: /stage/pgadmin

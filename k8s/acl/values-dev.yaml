@@ -1,1 +1,5 @@
-# Переопределения values.yaml для окружения dev.
+# Веб-интерфейс: https://platform.local/dev/keycloak.
+keycloak:
+  httpRelativePath: /dev/keycloak/
+  externalDatabase:
+    host: postgresql.db-dev.svc.cluster.local

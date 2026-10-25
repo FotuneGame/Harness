@@ -1,1 +1,5 @@
-# Переопределения values.yaml для окружения dev.
+# Веб-интерфейс: https://platform.local/dev/kafka.
+kafka-ui:
+  envs:
+    config:
+      SERVER_SERVLET_CONTEXT_PATH: /dev/kafka

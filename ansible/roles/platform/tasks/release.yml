@@ -1,13 +1,4 @@
 ---
-# Установка или обновление релиза Helm из k8s/<chart> с values-<env>.yaml;
-# release.args — дополнительные аргументы helm, release.logins — значения из
-# ключа username Secret (из Vault). Команда выполняется в фоне,
-# каждые 15 с в терминале печатается время выполнения (callback_plugins/progress.py).
-# Таймаут Helm при первой загрузке образов и файлов не ошибка: установка
-# повторяется, пока загрузка идёт (files/retry-downloading.sh).
-
-# Helm не пересоздаёт Job с прежним содержимым: упавший Job (например,
-# миграции GitLab) удаляется, чтобы повторный up запустил его заново.
 - name: "Helm: {{ release.name }} — перезапуск упавших Job"
   ansible.builtin.shell: |
     kubectl get jobs -n "$NAMESPACE" -o json \
@@ -22,6 +13,20 @@
   register: platform_failed_jobs
   changed_when: platform_failed_jobs.stdout | length > 0
 
+- name: "Helm: {{ release.name }} — Deployment с HPA на 0 подов"
+  ansible.builtin.shell: |
+    kubectl get hpa -n "$NAMESPACE" -o json \
+      | jq -r '.items[] | select(.spec.scaleTargetRef.kind == "Deployment")
+          | "\(.spec.scaleTargetRef.name) \(.spec.minReplicas // 1)"' \
+      | while read -r name min; do
+          [ "$(kubectl get deploy -n "$NAMESPACE" "$name" -o jsonpath='{.spec.replicas}')" = 0 ] || continue
+          kubectl scale deploy -n "$NAMESPACE" "$name" --replicas="$min" >/dev/null && echo "$name"
+        done
+  environment:
+    NAMESPACE: "{{ release.namespace | default(release.chart) }}"
+  register: platform_scaled
+  changed_when: platform_scaled.stdout | length > 0
+
 - name: "Helm: {{ release.name }} — логины из Vault"
   ansible.builtin.shell: >-
     kubectl get secret -n {{ release.namespace | default(release.chart) }} {{ item.value }}
@@ -32,22 +37,39 @@
   changed_when: false
   register: platform_logins
 
-- name: "Helm: {{ release.name }} (ход установки: kubectl get pods -n {{ release.namespace | default(release.chart) }})"
-  ansible.builtin.command:
-    argv: >-
-      {{ ['bash', role_path ~ '/files/retry-downloading.sh', release.namespace | default(release.chart),
-          'helm', 'upgrade', '--install', release.name, platform_charts ~ '/' ~ release.chart,
+- name: "Helm: {{ release.name }} — параметры"
+  ansible.builtin.set_fact:
+    platform_release_args: >-
+      {{ [release.name, platform_charts ~ '/' ~ release.chart,
           '--kube-context', platform_context,
-          '--namespace', release.namespace | default(release.chart),
-          '--values', platform_charts ~ '/' ~ release.chart ~ '/values-' ~ platform_env ~ '.yaml',
-          '--take-ownership', '--timeout', release.timeout | default('20m')]
-         + (['--wait'] if release.wait | default(true) else [])
+          '--namespace', release.namespace | default(release.chart)]
+         + (['--values', platform_charts ~ '/' ~ release.chart ~ '/values-' ~ release.env ~ '.yaml']
+            if release.env is defined and (platform_charts ~ '/' ~ release.chart ~ '/values-' ~ release.env ~ '.yaml') is file else [])
+         + (['--values', platform_charts ~ '/' ~ release.chart ~ '/' ~ release.values_file] if release.values_file is defined else [])
          + (release.args | default([]))
          + platform_logins.results | map(attribute='item.key')
            | zip(platform_logins.results | map(attribute='stdout') | map('to_json'))
            | map('join', '=') | map('regex_replace', '^', '--set-json=') | list }}
+
+- name: "Helm: {{ release.name }} — загрузка образов в узлы"
+  ansible.builtin.shell: >-
+    helm template {{ platform_release_args | map('quote') | join(' ') }}
+    | {{ ansible_playbook_python }} {{ role_path }}/files/release-images.py
+    | bash {{ role_path }}/files/pull-images.sh
+  register: platform_pulled
+  changed_when: platform_pulled.stdout | length > 0
+  async: 10800
+  poll: 15
+
+- name: "Helm: {{ release.name }} (ход установки: kubectl get pods -n {{ release.namespace | default(release.chart) }})"
+  ansible.builtin.command:
+    argv: >-
+      {{ ['bash', role_path ~ '/files/retry-downloading.sh', release.namespace | default(release.chart),
+          'helm', 'upgrade', '--install']
+         + platform_release_args
+         + ['--take-ownership', '--timeout', release.timeout | default('20m')]
+         + (['--wait'] if release.wait | default(true) else []) }}
   environment:
     RETRY_ATTEMPTS: "{{ platform_wait_attempts }}"
-  # Лимит фоновой задачи больше суммы попыток, чтобы ошибку сообщил сам Helm.
   async: "{{ ((release.timeout | default('20m') | regex_replace('m$', '') | int) * platform_wait_attempts + 10) * 60 }}"
   poll: 15

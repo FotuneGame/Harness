@@ -1,107 +1,88 @@
-# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/. Реестр docker.io (а не registry-1.docker.io),
-# чтобы образы шли через зеркало Docker Hub (terraform/variables.tf, registry_mirrors).
+# Базы данных окружения (namespace db-<env>, узел core). Пароли — Secret из
+# Vault db/<env>/*, логины передаёт Ansible. GitLab работает на PostgreSQL и
+# Redis окружения prod (values-prod.yaml). Образы Bitnami — в bitnamilegacy/
+# (allowInsecureImages).
+# false — только PostgreSQL и Redis (db-prod для GitLab, пока окружение prod не
+# развёрнуто): ClickHouse, Elasticsearch, Kibana, pgAdmin и RedisInsight не ставятся.
+allServices: true
+
 global:
   imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
-# Service/StatefulSet postgresql, PVC data-postgresql-0.
+# Владелец базы приложений — логин из Vault db/<env>/postgresql, суперпользователь
+# postgres — ключ postgres-password там же. Базы сервисов из других namespace —
+# serviceDatabases.
 postgresql:
   fullnameOverride: postgresql
   auth:
     enablePostgresUser: true
-    # Роли и базы приложений создаёт primary.initdb.scripts.
-    username: ""
-    database: ""
     existingSecret: postgresql-credentials
     secretKeys:
-      adminPasswordKey: password
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
   primary:
-    # GitLab создаёт схему базы одной транзакцией с тысячами таблиц и партиций:
-    # стандартных 64 блокировок не хватает (ERROR: out of shared memory).
-    extendedConfiguration: |
-      max_locks_per_transaction = 512
-    # Восстановление после сбоя на медленном диске (volumes/ в WSL) занимает
-    # минуты: liveness-проба не должна прерывать запуск. Ждём до 10 минут.
+    nodeSelector: &core { platform.node: core }
+    networkPolicy:
+      enabled: false
+    # Восстановление после сбоя на медленном диске (WSL) занимает минуты.
     startupProbe:
       enabled: true
       periodSeconds: 10
-      timeoutSeconds: 5
       failureThreshold: 60
-    nodeSelector:
-      platform.node: core
     persistence:
       storageClass: local
       size: 5Gi
     resources:
-      requests:
-        cpu: 250m
-        memory: 512Mi
-    extraEnvVars:
-      - name: GITLAB_DB_USER
-        valueFrom:
-          secretKeyRef: { name: gitlab-db-credentials, key: username }
-      - name: GITLAB_DB_PASSWORD
-        valueFrom:
-          secretKeyRef: { name: gitlab-db-credentials, key: password }
-      - name: KEYCLOAK_DB_USER
-        valueFrom:
-          secretKeyRef: { name: keycloak-db-credentials, key: username }
-      - name: KEYCLOAK_DB_PASSWORD
-        valueFrom:
-          secretKeyRef: { name: keycloak-db-credentials, key: password }
-      - name: POSTGRES_EXPORTER_USER
-        valueFrom:
-          secretKeyRef: { name: postgres-exporter-credentials, key: username }
-      - name: POSTGRES_EXPORTER_PASSWORD
-        valueFrom:
-          secretKeyRef: { name: postgres-exporter-credentials, key: password }
-    initdb:
-      scripts:
-        # Логины и пароли берутся из переменных окружения (Secret из Vault).
-        init.sql: |
-          \getenv gitlab_user GITLAB_DB_USER
-          \getenv gitlab_password GITLAB_DB_PASSWORD
-          \getenv keycloak_user KEYCLOAK_DB_USER
-          \getenv keycloak_password KEYCLOAK_DB_PASSWORD
-          \getenv exporter_user POSTGRES_EXPORTER_USER
-          \getenv exporter_password POSTGRES_EXPORTER_PASSWORD
-          CREATE ROLE :"gitlab_user" LOGIN PASSWORD :'gitlab_password';
-          CREATE ROLE :"keycloak_user" LOGIN PASSWORD :'keycloak_password';
-          CREATE ROLE :"exporter_user" LOGIN PASSWORD :'exporter_password';
-          GRANT pg_monitor TO :"exporter_user";
-          CREATE DATABASE gitlabhq_production OWNER :"gitlab_user";
-          CREATE DATABASE keycloak OWNER :"keycloak_user";
-          \connect gitlabhq_production
-          CREATE EXTENSION IF NOT EXISTS pg_trgm;
-          CREATE EXTENSION IF NOT EXISTS btree_gist;
+      requests: { cpu: 50m, memory: 128Mi }
+  # Метрики для Prometheus (ServiceMonitor) — дашборд Platform overview в Grafana.
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
   volumePermissions:
     enabled: true
 
-# Service/StatefulSet redis-master, PVC redis-data-redis-master-0.
 redis:
   fullnameOverride: redis
   architecture: standalone
+  networkPolicy:
+    enabled: false
   auth:
-    enabled: true
     existingSecret: redis-credentials
     existingSecretPasswordKey: password
   master:
-    nodeSelector:
-      platform.node: core
+    nodeSelector: *core
     persistence:
       storageClass: local
       size: 2Gi
     resources:
-      requests:
-        cpu: 100m
-        memory: 512Mi
+      requests: { cpu: 25m, memory: 64Mi }
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
   volumePermissions:
     enabled: true
 
-# Service clickhouse (8123/9000, метрики 9363), StatefulSet clickhouse-shard0,
-# PVC data-clickhouse-shard0-0.
+# Базы сервисов из других namespace (база: Secret с логином и паролем роли из
+# Vault, расширения PostgreSQL). Роль и база создаются, а пароль роли берётся из
+# Vault при каждой установке (templates/service-databases.yaml).
+serviceDatabases:
+  image: docker.io/bitnami/postgresql:latest
+  databases:
+    keycloak: { secret: keycloak-db-credentials }
+
+# База ClickHouse с именем логина (templates/clickhouse-database.yaml).
+clickhouseDatabase:
+  image: curlimages/curl:8.12.1
+
+# Официального chart нет (templates/redisinsight.yaml). proxyPath — путь веб-интерфейса.
+redisinsight:
+  image: redis/redisinsight:latest
+  proxyPath: ""
+
 clickhouse:
   fullnameOverride: clickhouse
   image:
@@ -110,87 +91,108 @@ clickhouse:
   shards: 1
   keeper:
     enabled: false
-  # Логин (auth.username) — из Vault, его передаёт Ansible.
+  networkPolicy:
+    enabled: false
   auth:
     existingSecret: clickhouse-credentials
     existingSecretKey: password
-  nodeSelector:
-    platform.node: core
+  nodeSelector: *core
   persistence:
     storageClass: local
     size: 10Gi
   resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
+    requests: { cpu: 100m, memory: 256Mi }
   metrics:
     enabled: true
+    serviceMonitor:
+      enabled: true
 
-# Service elasticsearch (9200), StatefulSet elasticsearch-master,
-# PVC data-elasticsearch-master-0.
 elasticsearch:
   fullnameOverride: elasticsearch
   image:
     repository: bitnamilegacy/elasticsearch
   security:
     enabled: false
-  # Без mmap Elasticsearch не требует vm.max_map_count=262144 на узле,
-  # поэтому привилегированный sysctl-контейнер не нужен.
+  # Без mmap не нужен привилегированный sysctl vm.max_map_count.
   extraConfig:
     node:
       store:
         allow_mmap: false
   sysctlImage:
     enabled: false
+  # Один узел — и master, и data.
   master:
+    masterOnly: false
     replicaCount: 1
-    heapSize: 512m
-    nodeSelector:
-      platform.node: core
+    heapSize: 384m
+    nodeSelector: *core
+    networkPolicy:
+      enabled: false
     persistence:
       storageClass: local
       size: 10Gi
     resources:
-      requests:
-        cpu: 500m
-        memory: 1Gi
+      requests: { cpu: 100m, memory: 640Mi }
   data:
     replicaCount: 0
   coordinating:
     replicaCount: 0
   ingest:
     enabled: false
-  # Версионные образы os-shell есть только в bitnamilegacy/.
   volumePermissions:
     enabled: true
     image:
       repository: bitnamilegacy/os-shell
 
-# Deployment/Service pgadmin, PVC pgadmin.
+kibana:
+  fullnameOverride: kibana
+  image:
+    repository: bitnamilegacy/kibana
+    tag: 9.1.2-debian-12-r0
+  elasticsearch:
+    hosts: [elasticsearch]
+    port: "9200"
+  # Путь веб-интерфейса — configuration.server.basePath в values-<env>.yaml.
+  configuration:
+    server:
+      rewriteBasePath: true
+  persistence:
+    enabled: false
+  networkPolicy:
+    enabled: false
+  extraEnvVars:
+    - { name: NODE_OPTIONS, value: --max-old-space-size=768 }
+  # Запуск при загруженном узле дольше проверки liveness (2 минуты).
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 60
+  nodeSelector: *core
+  resources:
+    requests: { cpu: 50m, memory: 640Mi }
+
 pgadmin4:
   fullnameOverride: pgadmin
   existingSecret: pgadmin-credentials
   secretKeys:
     pgadminPasswordKey: password
-  # Логин (env.email) — из Vault, его передаёт Ansible.
-  nodeSelector:
-    platform.node: core
+  # Путь веб-интерфейса — env.contextPath в values-<env>.yaml.
+  networkPolicy:
+    enabled: false
+  serverDefinitions:
+    enabled: true
+    servers:
+      postgresql:
+        Name: postgresql
+        Group: Servers
+        Host: postgresql
+        Port: 5432
+        SSLMode: prefer
+  nodeSelector: *core
   persistentVolume:
     enabled: true
     storageClass: local
-    size: 2Gi
+    size: 1Gi
   resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-  autoscaling:
-    enabled: true
-    minReplicas: 1
-    maxReplicas: 3
-    targetCPUUtilizationPercentage: 75
-
-# Официального chart нет: Deployment/Service/HPA redisinsight (templates/).
-redisinsight:
-  image: redis/redisinsight:latest
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 75
+    requests: { cpu: 25m, memory: 192Mi }

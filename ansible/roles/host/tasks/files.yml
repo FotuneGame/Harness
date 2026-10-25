@@ -40,7 +40,6 @@
     state: directory
     mode: "0700"
 
-# CA ограничен именами *.local (nameConstraints): добавьте ca.crt в доверенные.
 - name: Локальный CA
   ansible.builtin.command:
     argv:
@@ -99,11 +98,18 @@
     mode: "0600"
   loop: [ca.key, tls.key]
 
+- name: Каталоги томов в volumes/
+  become: true
+  ansible.builtin.file:
+    path: "{{ host_repo }}/volumes/{{ item }}"
+    state: directory
+    mode: "0777"
+  loop: "{{ host_volume_paths }}"
+
 - name: Имена *.local в /etc/hosts
   become: true
   ansible.builtin.blockinfile:
     path: /etc/hosts
     marker: "# {mark} platform"
     insertbefore: BOF
-    # По одному имени в строке (так же, как в hosts Windows).
     block: "{{ host_hostnames | map('regex_replace', '^', '127.0.0.1 ') | join('\n') }}"

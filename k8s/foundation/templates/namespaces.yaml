@@ -5,11 +5,45 @@ kind: Namespace
 metadata:
   name: {{ . }}
 {{- end }}
+{{- $envs := .Values.environments }}
+{{- range $env := $envs.names }}
+{{- range $folder, $settings := $envs.folders }}
+{{- $namespace := printf "%s-%s" $folder $env }}
+{{- $usedBy := get $envs.usedBy $namespace }}
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ .Values.appNamespace.name }}
+  name: {{ $namespace }}
+  labels:
+    platform.env: {{ $env }}
+  {{- if or $settings.tolerations $usedBy }}
   annotations:
-    scheduler.alpha.kubernetes.io/node-selector: {{ .Values.appNamespace.nodeSelector | quote }}
-    scheduler.alpha.kubernetes.io/defaultTolerations: {{ .Values.appNamespace.tolerations | quote }}
+    {{- with $settings.tolerations }}
+    scheduler.alpha.kubernetes.io/defaultTolerations: {{ . | quote }}
+    {{- end }}
+    {{- with $usedBy }}
+    platform/shared-services: {{ join "," .services | quote }}
+    {{- end }}
+  {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: environment-isolation
+  namespace: {{ $namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              platform.env: {{ $env }}
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: {{ concat $envs.allowNamespaces (dig "namespaces" (list) ($usedBy | default dict)) | toJson }}
+{{- end }}
+{{- end }}

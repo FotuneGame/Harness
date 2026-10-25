@@ -1,1 +1,5 @@
-# Переопределения values.yaml для окружения stage.
+# Веб-интерфейс: https://platform.local/stage/keycloak.
+keycloak:
+  httpRelativePath: /stage/keycloak/
+  externalDatabase:
+    host: postgresql.db-stage.svc.cluster.local

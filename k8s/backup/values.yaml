@@ -1,20 +1,36 @@
-# Расписание K8up (Schedule backup) в каждом namespace из списка.
+# Резервные копии всех namespace с данными: K8up (restic) раз в сутки в MinIO,
+# bucket volumes. Данные MinIO — volumes/backups, поэтому копия namespace лежит
+# в volumes/backups/volumes/<папка>[/<env>] — так же, как его данные в volumes/.
+# Пропущенную (сервер был выключен) копию создают ./cluster.sh start и up.
+# Без копий: cicd и acl-<env> (данных нет, Keycloak — в PostgreSQL db-<env>),
+# llm-<env> (модели скачиваются заново), backup (само хранилище копий).
+# Восстановление — K8up Restore (k8s/README.md).
 schedule:
-  namespaces: [db, mb, llm, vcs, secret, acl, logs, app]
+  namespaces:
+    - proxy
+    - vcs
+    - secret
+    - logs
+    - db-dev
+    - db-stage
+    - db-prod
+    - mb-dev
+    - mb-stage
+    - mb-prod
+    - app-dev
+    - app-stage
+    - app-prod
   backup: "0 2 * * *"
   check: "0 3 * * 0"
   prune: "0 4 * * 0"
   keepLast: 7
   keepDaily: 7
 
-# Образы Bitnami с версиями перенесены в bitnamilegacy/; allowInsecureImages
-# разрешает образы вне bitnami/, docker.io — загрузка через зеркало Docker Hub.
 global:
   imageRegistry: docker.io
   security:
     allowInsecureImages: true
 
-# Service minio:9000, Deployment minio, PVC minio (volumes/backups).
 minio:
   fullnameOverride: minio
   mode: standalone
@@ -26,69 +42,50 @@ minio:
     existingSecret: minio-credentials
     rootUserSecretKey: username
     rootPasswordSecretKey: password
+  # Веб-интерфейс: https://backups.local.
   console:
-    enabled: false
-  # Права на hostPath-том для пользователя контейнера.
+    image:
+      repository: bitnamilegacy/minio-object-browser
+    nodeSelector: { platform.node: core }
   defaultInitContainers:
     volumePermissions:
       enabled: true
       image:
         repository: bitnamilegacy/os-shell
-  nodeSelector:
-    platform.node: core
+  nodeSelector: { platform.node: core }
   persistence:
     storageClass: local
-    size: 20Gi
+    size: 50Gi
   resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-  # Бакеты, политики и пользователи создаёт post-install job chart.
-  # Пользователи — Secret из k8s/secret (minio-user-*): логины и пароли из
-  # Vault backup/minio-gitlab и backup/minio-k8up.
+    requests: { cpu: 50m, memory: 192Mi }
+  # Пользователь K8up — Secret minio-user-k8up (k8s/secret) из Vault.
   provisioning:
     enabled: true
-    nodeSelector:
-      platform.node: core
+    nodeSelector: { platform.node: core }
     buckets:
-      - name: backups
-      - name: gitlab-artifacts
-      - name: gitlab-lfs
-      - name: gitlab-uploads
-      - name: gitlab-packages
-      - name: gitlab-pages
+      - name: volumes
     policies:
-      - name: gitlab-storage
-        statements:
-          - effect: Allow
-            resources: ["arn:aws:s3:::gitlab-*"]
-            actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
-          - effect: Allow
-            resources: ["arn:aws:s3:::gitlab-*/*"]
-            actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
       - name: k8up-backups
         statements:
           - effect: Allow
-            resources: ["arn:aws:s3:::backups"]
+            resources: ["arn:aws:s3:::volumes"]
             actions: ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
           - effect: Allow
-            resources: ["arn:aws:s3:::backups/*"]
+            resources: ["arn:aws:s3:::volumes/*"]
             actions: ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
     usersExistingSecrets:
-      - minio-user-gitlab
       - minio-user-k8up
 
+# Адрес MinIO, учётка и пароль restic — общие для всех Schedule.
 k8up:
   fullnameOverride: k8up
-  nodeSelector:
-    platform.node: core
-  # Глобальные S3 и restic для всех Backup/Check/Prune (ключ k8up chart).
+  nodeSelector: { platform.node: core }
   k8up:
     envVars:
       - name: BACKUP_GLOBALS3ENDPOINT
         value: http://minio.backup.svc.cluster.local:9000
       - name: BACKUP_GLOBALS3BUCKET
-        value: backups
+        value: volumes
       - name: BACKUP_GLOBALACCESSKEYID
         valueFrom:
           secretKeyRef: { name: minio-k8up-credentials, key: username }

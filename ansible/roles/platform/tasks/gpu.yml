@@ -1,10 +1,4 @@
 ---
-# Видеокарта доступна узлам с долей VRAM (terraform/variables.tf, nodes.*.vram_mib).
-#   Ubuntu — HAMi: доли VRAM узлов и лимит VRAM каждого пода.
-#   WSL2   — NVIDIA device plugin: только доступ к GPU. Библиотека HAMi-core,
-#            ограничивающая VRAM, падает с CUDA из WSL2 (segfault при запуске).
-# llama.cpp получает GPU, если у узла llms есть доля VRAM и Kubernetes видит
-# ресурс nvidia.com/gpu; иначе работает на CPU.
 - name: GPU по умолчанию выключен
   ansible.builtin.set_fact:
     platform_gpu_nodes: "{{ platform_tf.gpu_nodes }}"
@@ -28,8 +22,6 @@
     - platform_gpu_nodes | length > 0
     - "'gpu' in platform_node_devices.stdout"
   block:
-    # Addon minikube (включается флагом --gpus) ставит свой device plugin на все
-    # узлы. Отключение addon не удаляет его DaemonSet — удаляем сами.
     - name: Отключение addon nvidia-device-plugin
       ansible.builtin.shell: |
         minikube addons disable nvidia-device-plugin --profile {{ platform_context }} >/dev/null
@@ -37,7 +29,6 @@
       register: platform_gpu_addon
       changed_when: "'deleted' in platform_gpu_addon.stdout"
 
-    # HAMi регистрирует на узле VRAM × devicememoryscaling (доля узла).
     - name: Настройки HAMi для узлов
       ansible.builtin.set_fact:
         platform_hami_nodes: >-

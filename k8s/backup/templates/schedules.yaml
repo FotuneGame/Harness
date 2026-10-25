@@ -6,8 +6,15 @@ metadata:
   name: backup
   namespace: {{ . | quote }}
 spec:
+  # Репозиторий restic: bucket volumes, путь каталога данных (db-dev -> volumes/db/dev).
+  backend:
+    s3:
+      bucket: volumes/{{ replace "-" "/" . }}
   backup:
     schedule: {{ $.Values.schedule.backup | quote }}
+    # Каталоги баз закрыты для всех, кроме пользователя сервиса.
+    podSecurityContext:
+      runAsUser: 0
   check:
     schedule: {{ $.Values.schedule.check | quote }}
   prune:

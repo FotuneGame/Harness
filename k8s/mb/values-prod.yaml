@@ -1,1 +1,5 @@
-# Переопределения values.yaml для окружения prod.
+# Веб-интерфейс: https://platform.local/prod/kafka.
+kafka-ui:
+  envs:
+    config:
+      SERVER_SERVLET_CONTEXT_PATH: /prod/kafka

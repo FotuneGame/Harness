@@ -14,7 +14,6 @@
     name: "{{ host_packages }}"
     update_cache: true
     cache_valid_time: 3600
-    # Ждать, пока unattended-upgrades освободит dpkg (обычно после старта WSL).
     lock_timeout: 600
 
 - name: Установка helm и terraform
@@ -40,7 +39,6 @@
       loop: "{{ host_archives }}"
       loop_control:
         label: "{{ item.url | basename }}"
-      # Медленная сеть: обрыв загрузки повторяется.
       register: host_archive_download
       until: host_archive_download is succeeded
       retries: 5
@@ -92,13 +90,11 @@
       loop: "{{ host_binaries }}"
       loop_control:
         label: "{{ item.dest }}"
-      # Медленная сеть: обрыв загрузки повторяется.
       register: host_binary_download
       until: host_binary_download is succeeded
       retries: 5
       delay: 10
 
-    # Проброс портов 80/443 без root: ./cluster.sh ports open.
     - name: Разрешение kubectl слушать порты ниже 1024
       community.general.capabilities:
         path: /usr/local/bin/kubectl
@@ -146,6 +142,11 @@
   ansible.builtin.include_tasks: wsl.yml
   when: host_is_wsl | bool
 
+- name: Остановка до перезапуска сессии
+  ansible.builtin.fail:
+    msg: "Настройки применены. Выполните: {{ host_restart | join('; ') }}. Затем снова ./cluster.sh up."
+  when: host_restart | length > 0
+
 - name: Ключ etcd, TLS и hosts
   ansible.builtin.include_tasks: files.yml
 
@@ -155,14 +156,14 @@
   failed_when: false
   register: host_docker_info
 
-- name: Остановка до перезапуска сессии
-  ansible.builtin.fail:
-    msg: "Настройки применены. Выполните: {{ host_restart | join('; ') }}. Затем снова ./cluster.sh up."
-  when: host_restart | length > 0
-
 - name: Проверка доступа к Docker
   ansible.builtin.assert:
     that: host_docker_info.rc == 0
     fail_msg: >-
+      {% if 'permission denied' in host_docker_info.stderr | default('') | lower -%}
+      Нет доступа к Docker: терминал открыт до добавления в группу docker.
+      Откройте терминал заново (или выполните newgrp docker) и повторите ./cluster.sh up.
+      {%- else -%}
       Docker недоступен. {{ 'Запустите Docker Desktop и включите Settings → Resources →
       WSL integration для этого дистрибутива.' if host_is_wsl | bool else 'Проверьте службу docker.' }}
+      {%- endif %}

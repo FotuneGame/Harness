@@ -1,0 +1,126 @@
+# Дашборд Grafana «Platform overview»: Grafana подхватывает ConfigMap с меткой
+# grafana_dashboard. Подписи рядов — displayName ${__field.labels.<метка>}:
+# двойные фигурные скобки legendFormat разобрал бы Helm.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-platform-overview
+  labels:
+    grafana_dashboard: "1"
+data:
+  platform-overview.json: |
+    {
+      "title": "Platform overview",
+      "uid": "platform-overview",
+      "schemaVersion": 39,
+      "version": 3,
+      "refresh": "30s",
+      "time": { "from": "now-3h", "to": "now" },
+      "panels": [
+        { "id": 1, "type": "row", "title": "Кластер", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
+        {
+          "id": 2, "title": "Активные тревоги", "type": "table",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
+          "targets": [{
+            "expr": "sum by (alertname, namespace, severity) (ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"})",
+            "instant": true, "format": "table"
+          }],
+          "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true } } }]
+        },
+        {
+          "id": 3, "title": "CPU узлов, % от выделенного", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "displayName": "${__field.labels.node}" } },
+          "targets": [{
+            "expr": "100 * sum by (node) (rate(node_cpu_usage_seconds_total[5m]) * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)) / sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})"
+          }]
+        },
+        {
+          "id": 4, "title": "Память узлов, % от выделенной", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+          "fieldConfig": {
+            "defaults": { "unit": "percent", "min": 0 },
+            "overrides": [
+              { "matcher": { "id": "byFrameRefID", "options": "A" },
+                "properties": [{ "id": "displayName", "value": "${__field.labels.node} используется" }] },
+              { "matcher": { "id": "byFrameRefID", "options": "B" },
+                "properties": [{ "id": "displayName", "value": "${__field.labels.node} запрошено подами" }] }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * sum by (node) (node_memory_working_set_bytes * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)) / sum by (node) (kube_node_status_allocatable{resource=\"memory\"})"
+            },
+            {
+              "refId": "B",
+              "expr": "100 * sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"}) / sum by (node) (kube_node_status_allocatable{resource=\"memory\"})"
+            }
+          ]
+        },
+        {
+          "id": 5, "title": "Неготовые поды по namespace", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 8 },
+          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
+          "targets": [{
+            "expr": "sum by (namespace) (kube_pod_status_ready{condition=\"false\"} * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1))"
+          }]
+        },
+        {
+          "id": 6, "title": "Перезапуски контейнеров за 15 минут", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 8 },
+          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}/${__field.labels.pod}" } },
+          "targets": [{ "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[15m])) > 0" }]
+        },
+        {
+          "id": 7, "title": "CPU по namespace, ядра", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "displayName": "${__field.labels.namespace}" } },
+          "targets": [{ "expr": "sum by (namespace) (rate(pod_cpu_usage_seconds_total[5m]))" }]
+        },
+        {
+          "id": 8, "title": "Память по namespace", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 15 },
+          "fieldConfig": { "defaults": { "unit": "bytes", "min": 0, "displayName": "${__field.labels.namespace}" } },
+          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } },
+          "targets": [{ "expr": "sum by (namespace) (pod_memory_working_set_bytes)" }]
+        },
+        { "id": 9, "type": "row", "title": "Базы данных окружений (GitLab — в db-prod)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 } },
+        {
+          "id": 10, "title": "Метрики баз доступны (1 — да)", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 23 },
+          "fieldConfig": { "defaults": { "min": 0, "max": 1, "decimals": 0, "displayName": "${__field.labels.namespace}/${__field.labels.service}" } },
+          "targets": [{ "expr": "up{service=~\"postgresql-metrics|redis-metrics|clickhouse\"}" }]
+        },
+        {
+          "id": 11, "title": "PostgreSQL: подключения", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 23 },
+          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
+          "targets": [{ "expr": "sum by (namespace) (pg_stat_activity_count)" }]
+        },
+        {
+          "id": 12, "title": "PostgreSQL: транзакций в секунду", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 23 },
+          "fieldConfig": { "defaults": { "unit": "ops", "min": 0, "displayName": "${__field.labels.namespace}/${__field.labels.datname}" } },
+          "targets": [{ "expr": "sum by (namespace, datname) (rate(pg_stat_database_xact_commit{datname!~\"template.*|postgres\"}[5m]))" }]
+        },
+        {
+          "id": 13, "title": "Redis: память", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
+          "fieldConfig": { "defaults": { "unit": "bytes", "min": 0, "displayName": "${__field.labels.namespace}" } },
+          "targets": [{ "expr": "redis_memory_used_bytes" }]
+        },
+        {
+          "id": 14, "title": "Redis: клиенты", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
+          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
+          "targets": [{ "expr": "redis_connected_clients" }]
+        },
+        {
+          "id": 15, "title": "ClickHouse: выполняемые запросы", "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
+          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
+          "targets": [{ "expr": "ClickHouseMetrics_Query" }]
+        }
+      ]
+    }

@@ -1,10 +1,12 @@
 apiVersion: v2
 name: vcs
-description: GitLab и GitLab Container Registry
+description: GitLab, GitLab Container Registry и MinIO для объектов GitLab
 type: application
-version: 0.2.0
+version: 0.3.0
 dependencies:
   - name: gitlab
     version: 10.5.0
     repository: https://charts.gitlab.io
-    condition: gitlab.enabled
+  - name: minio
+    version: 17.0.21
+    repository: oci://registry-1.docker.io/bitnamicharts

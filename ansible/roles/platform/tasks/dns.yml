@@ -1,7 +1,4 @@
 ---
-# Имена *.local внутри кластера. CoreDNS направляет их на Service ingress (поды,
-# задачи GitLab Runner). CA *.local нужен узлам (DaemonSet node-hosts из
-# k8s/proxy: Docker узла скачивает образы registry.local) и задачам Runner.
 - name: CA *.local в namespace
   ansible.builtin.shell: >-
     kubectl create configmap {{ platform_proxy_values.caConfigMap }} --namespace {{ item }}
@@ -11,8 +8,6 @@
   register: platform_ca_configmap
   changed_when: "'unchanged' not in platform_ca_configmap.stdout"
 
-# Блок между метками заменяется при каждом up. minikube и kubeadm при запуске
-# кластера ConfigMap coredns не перезаписывают, CoreDNS перечитывает его сам (reload).
 - name: Имена *.local в CoreDNS
   ansible.builtin.shell: |
     set -euo pipefail

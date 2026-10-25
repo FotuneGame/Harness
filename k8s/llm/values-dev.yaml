@@ -1,1 +1,3 @@
-# Переопределения values.yaml для окружения dev.
+# Веб-интерфейс и API: https://platform.local/dev/llama.
+llama:
+  apiPrefix: /dev/llama

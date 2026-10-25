@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-example-prod
+  namespace: cicd
+spec:
+  project: default
+  source:
+    repoURL: http://gitlab-webservice-default.vcs.svc.cluster.local:8181/main/node.git
+    targetRevision: main
+    path: deploy
+    helm:
+      valueFiles: [values.yaml, values-prod.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

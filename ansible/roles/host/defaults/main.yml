@@ -2,13 +2,11 @@
 host_repo: "{{ playbook_dir | dirname }}"
 host_is_wsl: "{{ 'microsoft' in ansible_facts.kernel | lower }}"
 
-# Параметры железа и кластера (память WSL, версия Kubernetes, путь ключа etcd)
-# задаёт только Terraform: роль читает их в host_tf (terraform/main.tf, local.ansible).
-
 host_packages:
   - ca-certificates
   - conntrack
   - curl
+  - gettext-base
   - gnupg
   - jq
   - libcap2-bin
@@ -17,7 +15,6 @@ host_packages:
   - tar
   - unzip
 
-# CLI с проверкой контрольных сумм. kubectl — версии kubernetes_version из Terraform.
 host_binaries:
   - url: https://storage.googleapis.com/minikube/releases/v1.34.0/minikube-linux-amd64
     checksum: sha256:https://storage.googleapis.com/minikube/releases/v1.34.0/minikube-linux-amd64.sha256
@@ -34,14 +31,22 @@ host_archives:
     binary: terraform
 host_archives_dir: /opt/platform-tools
 
-# Ключ шифрования Secret в etcd: хранится в volumes/ (исключён из Git) и
-# копируется в ~/.minikube/files, откуда minikube переносит его в узлы.
 host_encryption_config: "{{ host_repo }}/volumes/minikube/encryption/encryption-config.yaml"
 host_encryption_node_path: "{{ host_tf.encryption_config }}"
 
-# Локальный CA (только для имён *.local) и сертификат ingress.
 host_tls_dir: "{{ host_repo }}/volumes/proxy/tls"
 
-# Имена *.local: маршруты ingress из k8s/proxy/values.yaml.
 host_proxy_values: "{{ lookup('file', host_repo + '/k8s/proxy/values.yaml') | from_yaml }}"
-host_hostnames: "{{ host_proxy_values.routes | map(attribute='host') | list + host_proxy_values.extraHosts }}"
+host_hostnames: "{{ (host_proxy_values.routes | map(attribute='host') | list + host_proxy_values.extraHosts) | unique }}"
+host_foundation_values: "{{ lookup('file', host_repo + '/k8s/foundation/values.yaml') | from_yaml }}"
+host_volume_paths: >-
+  {%- set values = host_foundation_values -%}
+  {%- set paths = values.volumes | rejectattr('hostFiles', 'defined') | map(attribute='path') | list -%}
+  {%- for env in values.environments.names -%}
+  {%- for folder, settings in values.environments.folders.items() -%}
+  {%- for volume in settings.volumes | default([]) -%}
+  {%- set _ = paths.append([folder, env, volume.path | default('')] | select | join('/')) -%}
+  {%- endfor -%}
+  {%- endfor -%}
+  {%- endfor -%}
+  {{ paths }}

@@ -1,0 +1,51 @@
+{{- $databases := .Values.serviceDatabases.databases }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: service-databases
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        platform.node: core
+      containers:
+        - name: psql
+          image: {{ .Values.serviceDatabases.image }}
+          command: [bash, -ec]
+          args:
+            - |
+              {{- range $database, $settings := $databases }}
+              {{- $env := $database | upper }}
+              psql -h postgresql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'EOF'
+              \getenv user {{ $env }}_USER
+              \getenv password {{ $env }}_PASSWORD
+              SELECT format('CREATE ROLE %I LOGIN', :'user')
+                WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user') \gexec
+              ALTER ROLE :"user" WITH LOGIN PASSWORD :'password';
+              SELECT format('CREATE DATABASE {{ $database }} OWNER %I', :'user')
+                WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ $database }}') \gexec
+              {{- if $settings.extensions }}
+              \connect {{ $database }}
+              {{- range $settings.extensions }}
+              CREATE EXTENSION IF NOT EXISTS {{ . }};
+              {{- end }}
+              {{- end }}
+              EOF
+              {{- end }}
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgresql-credentials, key: postgres-password }
+            {{- range $database, $settings := $databases }}
+            - name: {{ $database | upper }}_USER
+              valueFrom:
+                secretKeyRef: { name: {{ $settings.secret }}, key: username }
+            - name: {{ $database | upper }}_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ $settings.secret }}, key: password }
+            {{- end }}

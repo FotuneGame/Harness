@@ -1,1 +1,28 @@
-# Переопределения values.yaml для окружения prod.
+# Веб-интерфейсы: https://platform.local/prod/<сервис>.
+redisinsight:
+  proxyPath: /prod/redis
+
+kibana:
+  configuration:
+    server:
+      basePath: /prod/kibana
+
+pgadmin4:
+  env:
+    contextPath: /prod/pgadmin
+
+# GitLab (namespace vcs) работает на PostgreSQL и Redis prod: своя роль и база
+# (Vault db/prod/gitlab), в Redis — база 1 (k8s/vcs).
+serviceDatabases:
+  databases:
+    gitlabhq_production:
+      secret: gitlab-db-credentials
+      extensions: [pg_trgm, btree_gist]
+
+postgresql:
+  primary:
+    # Миграции GitLab: иначе ERROR: out of shared memory.
+    extendedConfiguration: |
+      max_locks_per_transaction = 512
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }

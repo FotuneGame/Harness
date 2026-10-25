@@ -1,4 +1,5 @@
 {{- range .Values.routes }}
+{{- $path := .path | default "/" }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -7,6 +8,10 @@ metadata:
   namespace: {{ .namespace }}
   annotations:
     {{- toYaml (.annotations | default $.Values.annotations) | nindent 4 }}
+    {{- if .stripPath }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- end }}
 spec:
   ingressClassName: nginx
   tls:
@@ -16,11 +21,44 @@ spec:
     - host: {{ .host }}
       http:
         paths:
-          - path: /
+          {{- if .stripPath }}
+          - path: {{ $path }}(/|$)(.*)
+            pathType: ImplementationSpecific
+          {{- else }}
+          - path: {{ $path }}
             pathType: Prefix
+          {{- end }}
             backend:
               service:
                 name: {{ .service }}
                 port:
                   number: {{ .port }}
+{{- if ne $path "/" }}
+---
+# /<env>/<сервис> -> /<env>/<сервис>/: сервисы под путём (llama.cpp) отвечают
+# только со слешем, относительные ссылки их страниц без него не работают.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .service }}-slash
+  namespace: {{ .namespace }}
+  annotations:
+    nginx.ingress.kubernetes.io/permanent-redirect: https://{{ .host }}{{ $path }}/
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [{{ .host }}]
+      secretName: {{ $.Values.tlsSecret }}
+  rules:
+    - host: {{ .host }}
+      http:
+        paths:
+          - path: {{ $path }}
+            pathType: Exact
+            backend:
+              service:
+                name: {{ .service }}
+                port:
+                  number: {{ .port }}
+{{- end }}
 {{- end }}

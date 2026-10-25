@@ -1,0 +1,31 @@
+# ./cluster.sh restore: текущие данные PVC переносятся в ${KEEP} в том же томе
+# (откат восстановления — вернуть их обратно). Метка k8up.io/* — политика
+# Kyverno /app-data такие поды не меняет.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${NAME}-prepare
+  namespace: ${NAMESPACE}
+  labels:
+    k8up.io/owned-by: cluster-sh
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsUser: 0
+  containers:
+    - name: prepare
+      image: busybox:1.37
+      command: [sh, -ec]
+      args:
+        - |
+          cd /data
+          mkdir ${KEEP}
+          for f in * .[!.]*; do
+            if [ -e "$f" ] && [ "$f" != ${KEEP} ] && [ "$f" != .gitkeep ]; then mv "$f" ${KEEP}/; fi
+          done
+      volumeMounts:
+        - { name: data, mountPath: /data }
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: ${PVC}
