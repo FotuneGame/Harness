@@ -1,6 +1,0 @@
-dependencies:
-- name: open-webui
-  repository: https://open-webui.github.io/helm-charts
-  version: 17.0.0
-digest: sha256:7bd9a3b59d2b817df9b0301894139023be1d95d5e192c0171b9280574e1b9474
-generated: "2026-10-19T12:10:53.895723878Z"

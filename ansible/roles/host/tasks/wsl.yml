@@ -1,5 +1,4 @@
 ---
-# chmod на дисках Windows: ключи и данные БД в volumes/.
 - name: Опция metadata для дисков Windows
   become: true
   community.general.ini_file:

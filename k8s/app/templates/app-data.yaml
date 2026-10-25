@@ -6,18 +6,16 @@ metadata:
 spec:
   accessModes: [ReadWriteMany]
   storageClassName: local
-  volumeName: pv-app
+  volumeName: pv-{{ .Release.Namespace }}
   resources:
     requests:
       storage: {{ $data.size }}
 ---
-# Монтирует volumes/app/<имя приложения> в создаваемые поды namespace.
-# Меняются только поды (autogen выключен), поэтому Argo CD не видит
-# расхождений в Deployment и других ресурсах из Git.
+# Поды приложений получают volumes/app/<env>/<имя> в /app-data.
 apiVersion: policies.kyverno.io/v1
 kind: MutatingPolicy
 metadata:
-  name: app-data
+  name: app-data-{{ .Release.Namespace }}
 spec:
   autogen:
     podControllers:
@@ -34,6 +32,11 @@ spec:
         apiVersions: [v1]
         operations: [CREATE]
         resources: [pods]
+  # Поды резервного копирования K8up монтируют PVC сами.
+  matchConditions:
+    - name: application-pod
+      expression: >-
+        !has(object.metadata.labels) || !object.metadata.labels.exists(k, k.startsWith('k8up.io/'))
   variables:
     - name: nameLabels
       expression: >-
@@ -64,8 +67,6 @@ spec:
               })
             }
           }
-    # command — атомарный список, ApplyConfiguration его не задаёт: init-контейнер
-    # добавляется через JSONPatch.
     - patchType: JSONPatch
       jsonPatch:
         expression: >-

@@ -1,12 +1,6 @@
 ---
-- name: Проверка окружения Helm
-  ansible.builtin.assert:
-    that: platform_env in ['dev', 'stage', 'prod']
-    fail_msg: "Окружение должно быть dev, stage или prod."
-
 - name: Проверка, что у каждого обязательного секрета есть начальное значение
   ansible.builtin.assert:
-    # Пустой результат шаблона ansible-core превращает в None.
     that: missing | default('', true) | trim | length == 0
     fail_msg: "Нет значений в platform_vault_seed для: {{ missing }}"
   vars:
@@ -36,18 +30,14 @@
   register: platform_apiserver
   failed_when: "'encryption-provider-config' not in platform_apiserver.stdout"
 
-# Пока сеть подов (kindnet) не готова, kubelet пересоздаёт sandbox подов и
-# перезапускает их контейнеры: сервисы ставятся после готовности сети и DNS.
 - name: Ожидание сети подов
   ansible.builtin.command: >-
     {{ platform_retry }} kube-system
-    kubectl wait pod -n kube-system -l app=kindnet --for=condition=Ready --timeout=15m
+    kubectl wait pod -n kube-system -l k8s-app=calico-node --for=condition=Ready --timeout=15m
   environment:
     RETRY_ATTEMPTS: "{{ platform_wait_attempts }}"
   changed_when: false
 
-# coredns, запущенный до сети подов, уходит в CrashLoopBackOff с паузами до
-# 5 минут: если он не готов, перезапускаем его, а не ждём.
 - name: Ожидание DNS кластера
   ansible.builtin.shell: |
     kubectl wait pod -n kube-system -l k8s-app=kube-dns --for=condition=Ready --timeout=2m && exit 0
@@ -75,7 +65,6 @@
 - name: Имена *.local и CA внутри кластера
   ansible.builtin.include_tasks: dns.yml
 
-# Vault становится ready только после разблокировки, поэтому без --wait.
 - name: Vault и Vault Secrets Operator
   ansible.builtin.include_tasks: release.yml
   vars:
@@ -111,7 +100,28 @@
 - name: GPU для llama.cpp
   ansible.builtin.include_tasks: gpu.yml
 
-# Токен Runner появляется только после ручной регистрации в GitLab.
+- name: Необязательные секреты из Vault
+  ansible.builtin.shell: |
+    missing=""
+    for secret in $SECRETS; do
+      kubectl get secret -n "${secret%%/*}" "${secret#*/}" >/dev/null 2>&1 && continue
+      kubectl get vaultstaticsecret -n "${secret%%/*}" "${secret#*/}" -o json | kubectl replace --force -f - >/dev/null
+      missing="$missing $secret"
+    done
+    for _ in $(seq 15); do
+      [ -z "$missing" ] && break
+      sleep 2
+      for secret in $missing; do
+        kubectl get secret -n "${secret%%/*}" "${secret#*/}" >/dev/null 2>&1 || continue
+        echo "$secret"
+        missing=$(echo "$missing" | tr ' ' '\n' | grep -vx "$secret" | tr '\n' ' ' | xargs)
+      done
+    done
+  environment:
+    SECRETS: "{{ platform_optional_secrets }}"
+  register: platform_optional_synced
+  changed_when: platform_optional_synced.stdout | length > 0
+
 - name: Наличие токена GitLab Runner
   ansible.builtin.command: kubectl get secret -n cicd gitlab-runner-credentials
   changed_when: false
@@ -122,14 +132,54 @@
   ansible.builtin.set_fact:
     platform_runner: "{{ platform_runner_secret.rc == 0 }}"
 
-- name: Сервисы платформы
+- name: Восстановление ключей шифрования GitLab
+  ansible.builtin.shell: |
+    mkdir -p "$(dirname "$FILE")"
+    old="{{ platform_repo }}/volumes/vcs/gitlab-rails-secret.json"
+    [ -f "$old" ] && [ ! -f "$FILE" ] && mv "$old" "$FILE"
+    [ -f "$FILE" ] || exit 0
+    kubectl get secret -n vcs gitlab-rails-secret >/dev/null 2>&1 && exit 0
+    kubectl apply -f "$FILE" >/dev/null && echo restored
+  environment:
+    FILE: "{{ platform_gitlab_secret_file }}"
+  register: platform_gitlab_secret_restore
+  changed_when: "'restored' in platform_gitlab_secret_restore.stdout"
+
+- name: Состав db-prod до установки
+  ansible.builtin.shell: >-
+    helm get values db-prod -n db-prod -o json
+    | jq -r 'if has("allServices") then .allServices else true end'
+  changed_when: false
+  failed_when: false
+  register: platform_db_prod_values
+
+- name: Состав db-prod
+  ansible.builtin.set_fact:
+    platform_db_prod_all: "{{ 'prod' in platform_envs or platform_db_prod_values.stdout == 'true' }}"
+
+- name: Сервисы платформы и окружения {{ platform_envs | join(', ') }}
   ansible.builtin.include_tasks: release.yml
   loop: "{{ platform_releases }}"
   loop_control:
     loop_var: release
     label: "{{ release.name }}"
+  when: release.env is not defined or release.env in platform_envs or release.shared | default(false)
 
-# Хеш пароля в аннотации: argocd-secret меняется только при смене пароля.
+- name: Ключи шифрования GitLab из кластера
+  ansible.builtin.shell: >-
+    kubectl get secret -n vcs gitlab-rails-secret -o json
+    | jq '{apiVersion, kind, type, data, metadata: {name: .metadata.name, namespace: .metadata.namespace}}'
+  changed_when: false
+  register: platform_gitlab_secret
+  no_log: true
+
+- name: Копия ключей шифрования GitLab в volumes/
+  ansible.builtin.copy:
+    content: "{{ platform_gitlab_secret.stdout }}\n"
+    dest: "{{ platform_gitlab_secret_file }}"
+    mode: "0600"
+  no_log: true
+
 - name: Пароль администратора Argo CD из Vault
   ansible.builtin.shell: |
     set -eu
@@ -149,5 +199,5 @@
 - name: Итог
   ansible.builtin.debug:
     msg: >-
-      Кластер ({{ platform_env }}) развёрнут{{ '' if platform_runner else '; GitLab Runner выключен до записи
+      Кластер развёрнут (окружения {{ platform_envs | join(', ') }}){{ '' if platform_runner else '; GitLab Runner выключен до записи
       cicd/gitlab-runner в Vault' }}. Доступ из браузера: ./cluster.sh ports open.

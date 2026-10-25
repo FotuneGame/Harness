@@ -11,14 +11,23 @@
 - name: Состояние Vault
   ansible.builtin.command: kubectl exec -n secret vault-0 -- vault status -format=json
   changed_when: false
-  failed_when: platform_vault_status.stdout | length == 0
+  failed_when: false
   register: platform_vault_status
-  until: platform_vault_status.stdout | length > 0
+  until: platform_vault_status.stdout | length > 0 or 'no seal configuration found' in platform_vault_status.stderr
   retries: 12
   delay: 5
 
-# Настройка (политики, роли, начальные секреты) применяется заново, если
-# изменился шаблон или списки секретов: хеш хранится в ConfigMap vault-config.
+- name: Данные Vault целы
+  ansible.builtin.fail:
+    msg: >-
+      {{ 'Данные Vault в volumes/secret повреждены: инициализация была прервана
+      (есть core/_keyring, нет конфигурации печати). Секретов в них нет. Удалите
+      каталоги: sudo rm -rf volumes/secret/core volumes/secret/sys, затем
+      kubectl delete pod -n secret vault-0 и снова ./cluster.sh up.'
+      if 'no seal configuration found' in platform_vault_status.stderr
+      else 'Vault не отвечает: ' ~ platform_vault_status.stderr }}
+  when: platform_vault_status.stdout | length == 0
+
 - name: Применённая настройка Vault
   ansible.builtin.command: kubectl get configmap -n secret vault-config -o jsonpath={.data.hash}
   changed_when: false
@@ -36,8 +45,6 @@
   ansible.builtin.set_fact:
     platform_vault_setup: "{{ not platform_vault.initialized or platform_vault_applied.stdout != platform_vault_hash }}"
 
-# Root token по unseal key требует enable_unauthenticated_access из
-# k8s/secret/values.yaml: конфигурация читается только при запуске pod.
 - name: Перезапуск Vault с новой конфигурацией
   ansible.builtin.shell: |
     kubectl exec -n secret vault-0 -- grep -q enable_unauthenticated_access /tmp/storageconfig.hcl && exit 0
@@ -54,7 +61,6 @@
     platform_vault: "{{ platform_vault | combine({'sealed': true}) }}"
   when: platform_vault_restart is changed
 
-# Ключи нужны после каждого перезапуска pod и для root token при настройке.
 - name: Ввод unseal key
   ansible.builtin.pause:
     prompt: "{{ 'Unseal key' if platform_vault.sealed else 'Настройка Vault изменилась, unseal key' }} ({{ item }} из 3)"

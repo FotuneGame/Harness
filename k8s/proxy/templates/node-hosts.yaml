@@ -50,7 +50,7 @@ spec:
             - name: SERVICE
               value: {{ $service }}
             - name: HOSTS
-              value: {{ join " " $hosts | quote }}
+              value: {{ $hosts | uniq | join " " | quote }}
             - name: REGISTRIES
               value: {{ join " " .Values.nodeHosts.registries | quote }}
             - name: INTERVAL

@@ -1,5 +1,5 @@
 variable "host" {
-  description = "Сервер: Intel Core i5-11400F (6 ядер / 12 потоков), разрешено 32 ГиБ RAM из 48, диск 450 ГиБ, GTX 1650 (4 ГиБ VRAM)."
+  description = "Сервер: Intel Core i5-11400F (6 ядер / 12 потоков), разрешено 42 ГиБ RAM из 48, диск 450 ГиБ, GTX 1650 (4 ГиБ VRAM)."
   type = object({
     cpus         = number
     memory_gib   = number
@@ -8,14 +8,14 @@ variable "host" {
   })
   default = {
     cpus         = 12
-    memory_gib   = 32
+    memory_gib   = 42
     disk_gib     = 450
     gpu_vram_mib = 4096
   }
 }
 
 variable "nodes" {
-  description = "Узлы Kubernetes: core — платформа и мониторинг, llms — LLM, apps — приложения из Argo CD. vram_mib — доля VRAM видеокарты (HAMi)."
+  description = "Узлы Kubernetes: core — сервисы платформы и всех окружений, llms — llama.cpp окружений, apps — свои приложения окружений dev, stage, prod. vram_mib — доля VRAM видеокарты (HAMi)."
   type = map(object({
     cpus       = number
     memory_gib = number
@@ -23,9 +23,9 @@ variable "nodes" {
     vram_mib   = optional(number, 0)
   }))
   default = {
-    core = { cpus = 6, memory_gib = 16, disk_gib = 100, vram_mib = 0 }
-    llms = { cpus = 4, memory_gib = 8, disk_gib = 100, vram_mib = 4096 }
-    apps = { cpus = 2, memory_gib = 4, disk_gib = 100, vram_mib = 0 }
+    core = { cpus = 6, memory_gib = 20, disk_gib = 200, vram_mib = 0 }
+    llms = { cpus = 4, memory_gib = 16, disk_gib = 200, vram_mib = 4096 }
+    apps = { cpus = 2, memory_gib = 4, disk_gib = 50, vram_mib = 0 }
   }
 
   validation {
@@ -46,11 +46,6 @@ variable "nodes" {
       for node in values(var.nodes) : node.vram_mib >= 0 && floor(node.vram_mib) == node.vram_mib
     ])
     error_message = "vram_mib узлов — целое неотрицательное число МиБ."
-  }
-
-  validation {
-    condition     = length(distinct([for node in values(var.nodes) : node.disk_gib])) == 1
-    error_message = "Minikube создаёт узлы с одинаковым диском: укажите равный disk_gib."
   }
 }
 

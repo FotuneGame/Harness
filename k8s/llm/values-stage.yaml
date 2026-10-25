@@ -1,0 +1,3 @@
+# Веб-интерфейс и API: https://platform.local/stage/llama.
+llama:
+  apiPrefix: /stage/llama

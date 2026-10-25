@@ -1,33 +1,33 @@
-# Общие значения окружений; отличия — в values-<env>.yaml.
-# Тег образа (image.tag в values-<env>.yaml) обновляет CI (.gitlab-ci.yml).
-image:
-  repository: registry.local/group/node-example
-  tag: latest
-# Secret deploy token GitLab (README платформы: «Образ из registry»).
+# Окружение (dev, stage, prod) — stage в values-<env>.yaml; тег образа imageTag
+# там же, его записывает CI (deploy-<env>).
+image: registry.local/main/node
 imagePullSecret: gitlab-registry
-
 replicas: 1
 resources:
-  requests:
-    cpu: 100m
-    memory: 256Mi
-  limits:
-    memory: 512Mi
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { memory: 512Mi }
 
-# Переменные окружения (src/config.ts). Пароли не здесь: они в Secret из
-# Vault (namespace app), см. templates/deployment.yaml.
+# Переменные приложения (src/config.ts); {{ .Values.stage }} — окружение.
+# Сервисы окружения — в namespace <папка>-<env>.
 env:
   PORT: "3000"
-  POSTGRES_HOST: postgresql.db.svc.cluster.local
-  REDIS_HOST: redis-master.db.svc.cluster.local
-  CLICKHOUSE_URL: http://clickhouse.db.svc.cluster.local:8123
-  ELASTICSEARCH_URL: http://elasticsearch.db.svc.cluster.local:9200
-  KAFKA_BROKERS: kafka.mb.svc.cluster.local:9092
-  S3_URL: http://minio.backup.svc.cluster.local:9000
-  S3_BUCKET: app
-  LLM_URL: http://llama.llm.svc.cluster.local:8080
-  KEYCLOAK_ISSUER: https://keycloak.local/realms/master
-  KEYCLOAK_JWKS_URL: http://keycloak.acl.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs
+  POSTGRES_HOST: postgresql.db-{{ .Values.stage }}.svc.cluster.local
+  REDIS_HOST: redis-master.db-{{ .Values.stage }}.svc.cluster.local
+  CLICKHOUSE_URL: http://clickhouse.db-{{ .Values.stage }}.svc.cluster.local:8123
+  ELASTICSEARCH_URL: http://elasticsearch.db-{{ .Values.stage }}.svc.cluster.local:9200
+  KAFKA_BROKERS: kafka.mb-{{ .Values.stage }}.svc.cluster.local:9092
+  LLM_URL: http://llama.llm-{{ .Values.stage }}.svc.cluster.local:8080/{{ .Values.stage }}/llama
+  KEYCLOAK_ISSUER: https://platform.local/{{ .Values.stage }}/keycloak/realms/master
+  KEYCLOAK_JWKS_URL: http://keycloak.acl-{{ .Values.stage }}.svc.cluster.local:8080/{{ .Values.stage }}/keycloak/realms/master/protocol/openid-connect/certs
   OTLP_URL: http://jaeger.logs.svc.cluster.local:4318
-  # Папку монтирует Kyverno: volumes/app/<имя Argo CD Application>.
   APP_DATA_PATH: /app-data
+
+# Логины и пароли — Secret из Vault db/<env>/*, которые платформа создаёт в app-<env>.
+secretEnv:
+  POSTGRES_USER: { secret: postgresql-credentials, key: username }
+  POSTGRES_DB: { secret: postgresql-credentials, key: username }
+  POSTGRES_PASSWORD: { secret: postgresql-credentials, key: password }
+  REDIS_PASSWORD: { secret: redis-credentials, key: password }
+  CLICKHOUSE_USER: { secret: clickhouse-credentials, key: username }
+  CLICKHOUSE_DB: { secret: clickhouse-credentials, key: username }
+  CLICKHOUSE_PASSWORD: { secret: clickhouse-credentials, key: password }

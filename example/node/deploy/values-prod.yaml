@@ -1,3 +1,2 @@
-image:
-  tag: latest
+stage: prod
 replicas: 2

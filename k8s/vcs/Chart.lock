@@ -2,5 +2,8 @@ dependencies:
 - name: gitlab
   repository: https://charts.gitlab.io
   version: 10.5.0
-digest: sha256:5c3887c5c84dc96c012064f5089c311be45da431956f2e31349bbbfd18fe9db1
-generated: "2026-10-19T08:16:30.418619507Z"
+- name: minio
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 17.0.21
+digest: sha256:d0349b916af428e27d8d237a83af78febe9fe155de5ef7618fa279c1a6de70f1
+generated: "2026-10-25T09:38:36.019289234+03:00"

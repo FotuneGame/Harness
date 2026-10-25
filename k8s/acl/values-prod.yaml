@@ -1,0 +1,5 @@
+# Веб-интерфейс: https://platform.local/prod/keycloak.
+keycloak:
+  httpRelativePath: /prod/keycloak/
+  externalDatabase:
+    host: postgresql.db-prod.svc.cluster.local

@@ -1,7 +1,27 @@
+# Метрики баз (PostgreSQL, Redis, ClickHouse) — встроенные экспортеры charts
+# Bitnami в k8s/db (metrics.enabled), Prometheus находит их по ServiceMonitor.
+# Дашборды Grafana: стандартные kube-prometheus-stack (кластер, узлы, namespace,
+# поды) и templates/dashboards/ (ConfigMap с меткой grafana_dashboard).
 kube-prometheus-stack:
   fullnameOverride: logs
   crds:
     enabled: true
+
+  # etcd, kube-scheduler и kube-controller-manager в minikube отдают метрики
+  # только на 127.0.0.1: их цели всегда недоступны (ложные TargetDown).
+  kubeEtcd:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeControllerManager:
+    enabled: false
+  defaultRules:
+    rules:
+      etcd: false
+      kubeControllerManager: false
+      kubeSchedulerAlerting: false
+      kubeSchedulerRecording: false
+      windows: false
 
   alertmanager:
     config:
@@ -92,19 +112,6 @@ kube-prometheus-stack:
             resources:
               requests:
                 storage: 10Gi
-    # Метрики ClickHouse отдаёт сам chart db (порт http-metrics).
-    additionalServiceMonitors:
-      - name: clickhouse
-        selector:
-          matchLabels:
-            app.kubernetes.io/name: clickhouse
-            app.kubernetes.io/instance: platform-db
-        namespaceSelector:
-          matchNames: [db]
-        endpoints:
-          - port: http-metrics
-            path: /metrics
-            interval: 30s
 
   prometheusOperator:
     nodeSelector:
@@ -115,6 +122,21 @@ kube-prometheus-stack:
         memory: 128Mi
 
   # DaemonSet на всех узлах, включая узел apps с taint.
+  # cAdvisor kubelet в minikube с Docker (cri-dockerd) видит только cgroup подов:
+  # CPU и память узлов, подов и память контейнеров — из /metrics/resource.
+  kubelet:
+    serviceMonitor:
+      resource: true
+      resourcePath: /metrics/resource
+
+  # Дашборды node-exporter только для Linux.
+  nodeExporter:
+    operatingSystems:
+      aix:
+        enabled: false
+      darwin:
+        enabled: false
+
   prometheus-node-exporter:
     fullnameOverride: logs-prometheus-node-exporter
     tolerations:
@@ -165,37 +187,30 @@ kube-prometheus-stack:
         - name: platform-services
           rules:
             - alert: PlatformExporterDown
-              expr: up{service=~".*(postgres-exporter|redis-exporter|clickhouse|kafka-exporter).*"} == 0
+              expr: up{service=~"postgresql-metrics|redis-metrics|clickhouse"} == 0
               for: 3m
               labels:
                 severity: critical
               annotations:
-                summary: A database or broker metrics endpoint is unavailable
-                description: Prometheus cannot scrape {{ $labels.service }}.
-            - alert: KafkaConsumerLagHigh
-              expr: max by (consumergroup) (kafka_consumergroup_lag) > 1000
-              for: 10m
-              labels:
-                severity: warning
-              annotations:
-                summary: Kafka consumer lag is high
-                description: Consumer group {{ $labels.consumergroup }} has lag above 1000.
+                summary: A database metrics endpoint is unavailable
+                description: Prometheus cannot scrape {{ $labels.namespace }}/{{ $labels.service }}.
             - alert: PostgreSQLConnectionsHigh
-              expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+              expr: sum by (namespace) (pg_stat_activity_count) / max by (namespace) (pg_settings_max_connections) > 0.8
               for: 10m
               labels:
                 severity: warning
               annotations:
                 summary: PostgreSQL connection usage is high
-                description: PostgreSQL is using more than 80% of configured connections.
+                description: PostgreSQL in {{ $labels.namespace }} is using more than 80% of configured connections.
+            # Без maxmemory (0) деление дало бы +Inf и ложную тревогу.
             - alert: RedisMemoryUsageHigh
-              expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+              expr: redis_memory_used_bytes / (redis_memory_max_bytes > 0) > 0.85
               for: 10m
               labels:
                 severity: warning
               annotations:
                 summary: Redis memory usage is high
-                description: Redis is using more than 85% of its configured memory limit.
+                description: Redis in {{ $labels.namespace }} is using more than 85% of its configured memory limit.
 
 # Трейсы принимаются по OTLP (4317 gRPC, 4318 HTTP) и хранятся в памяти.
 jaeger:
@@ -241,56 +256,3 @@ jaeger:
     exporters:
       jaeger_storage_exporter:
         trace_storage: local
-
-prometheus-postgres-exporter:
-  fullnameOverride: postgres-exporter
-  config:
-    datasource:
-      host: postgresql.db.svc.cluster.local
-      database: postgres
-      userSecret:
-        name: postgres-exporter-credentials
-        key: username
-      passwordSecret:
-        name: postgres-exporter-credentials
-        key: password
-  serviceMonitor:
-    enabled: true
-  nodeSelector:
-    platform.node: core
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-
-prometheus-redis-exporter:
-  fullnameOverride: redis-exporter
-  redisAddress: redis://redis-master.db.svc.cluster.local:6379
-  auth:
-    enabled: true
-    secret:
-      name: redis-credentials
-      key: password
-  serviceMonitor:
-    enabled: true
-  nodeSelector:
-    platform.node: core
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-
-prometheus-kafka-exporter:
-  fullnameOverride: kafka-exporter
-  kafkaServer:
-    - kafka.mb.svc.cluster.local:9092
-  prometheus:
-    serviceMonitor:
-      enabled: true
-      namespace: ""
-  nodeSelector:
-    platform.node: core
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi

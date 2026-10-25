@@ -1,27 +1,29 @@
 apiVersion: v2
 name: db
-description: PostgreSQL, pgAdmin, Redis, RedisInsight, ClickHouse и Elasticsearch
+description: Базы данных окружения (db-<env>) с веб-интерфейсами; prod — ещё и для GitLab
 type: application
-version: 0.2.0
+version: 0.3.0
 dependencies:
   # Charts Bitnami публикуются только в OCI-реестре Docker Hub.
   - name: postgresql
     version: 18.12.4
     repository: oci://registry-1.docker.io/bitnamicharts
-    condition: postgresql.enabled
   - name: redis
     version: 28.3.1
     repository: oci://registry-1.docker.io/bitnamicharts
-    condition: redis.enabled
   - name: clickhouse
     version: 9.4.4
     repository: oci://registry-1.docker.io/bitnamicharts
-    condition: clickhouse.enabled
+    condition: allServices
   - name: elasticsearch
     version: 22.1.6
     repository: oci://registry-1.docker.io/bitnamicharts
-    condition: elasticsearch.enabled
+    condition: allServices
+  - name: kibana
+    version: 12.1.9
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: allServices
   - name: pgadmin4
     version: 1.70.4
     repository: https://helm.runix.net
-    condition: pgadmin4.enabled
+    condition: allServices

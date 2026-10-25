@@ -1,6 +1,4 @@
 ---
-# NVIDIA Container Toolkit, если в Ubuntu установлен драйвер NVIDIA.
-# В WSL2 GPU предоставляет Docker Desktop.
 - name: Поиск драйвера NVIDIA
   ansible.builtin.command: nvidia-smi -L
   changed_when: false
@@ -44,7 +42,6 @@
         state: restarted
       when: host_nvidia_runtime is changed
 
-    # Требование minikube для --gpus с драйвером docker.
     - name: net.core.bpf_jit_harden=0
       ansible.builtin.copy:
         dest: /etc/sysctl.d/99-minikube-gpu.conf

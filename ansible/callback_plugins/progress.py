@@ -1,5 +1,3 @@
-# Вывод Ansible по умолчанию + ход долгих задач в одной перезаписываемой строке;
-# для Helm — состояние подов namespace из имени задачи «... kubectl get pods -n <ns>)».
 import re
 import shutil
 import subprocess
@@ -21,7 +19,6 @@ extends_documentation_fragment:
 
 NAMESPACE = re.compile(r"kubectl get pods -n ([\w-]+)")
 
-
 class CallbackModule(DefaultCallbackModule):
     CALLBACK_VERSION = 2.0
     CALLBACK_TYPE = "stdout"
@@ -36,7 +33,6 @@ class CallbackModule(DefaultCallbackModule):
         return f"{seconds // 60} мин {seconds % 60:02d} с"
 
     def _pods(self):
-        """Краткое состояние подов: «готово 3/5; ждём: имя статус, ...»."""
         try:
             output = subprocess.run(
                 ["kubectl", "get", "pods", "-n", self._namespace, "--no-headers"],
@@ -84,7 +80,6 @@ class CallbackModule(DefaultCallbackModule):
         left = result._result.get("retries", 0) - result._result.get("attempts", 0)
         self._show(f"  … {self._elapsed()}: ожидание, осталось попыток {left}")
 
-    # Итог фоновой задачи печатают v2_runner_on_ok/failed — без строк ASYNC OK/FAILED.
     def v2_runner_on_async_ok(self, result):
         self._close_line()
 

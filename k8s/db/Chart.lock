@@ -11,8 +11,11 @@ dependencies:
 - name: elasticsearch
   repository: oci://registry-1.docker.io/bitnamicharts
   version: 22.1.6
+- name: kibana
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 12.1.9
 - name: pgadmin4
   repository: https://helm.runix.net
   version: 1.70.4
-digest: sha256:83f8ed38c9a1b1d02955c7e7529324f7dd39051956f174475390d245908338a7
-generated: "2026-10-19T12:10:46.041363262Z"
+digest: sha256:c8af0df6df802f31c3a66c9fa437bfadc614740fa7dbd640a8f7c477a93b9d7f
+generated: "2026-10-25T13:29:03.760815906+03:00"

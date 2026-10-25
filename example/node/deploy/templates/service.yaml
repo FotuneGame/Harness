@@ -12,7 +12,6 @@ spec:
       port: 80
       targetPort: http
 ---
-# Prometheus собирает /metrics (дашборды — Grafana).
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:

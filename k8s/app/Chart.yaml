@@ -1,5 +1,5 @@
 apiVersion: v2
 name: app
-description: Namespace приложений из Argo CD — папки volumes/app/<приложение>
+description: Окружение своих приложений (app-<env>) — папка /app-data для подов Argo CD
 type: application
-version: 0.1.0
+version: 0.4.0

@@ -14,7 +14,6 @@
     name: "{{ host_packages }}"
     update_cache: true
     cache_valid_time: 3600
-    # Ждать, пока unattended-upgrades освободит dpkg (обычно после старта WSL).
     lock_timeout: 600
 
 - name: Установка helm и terraform
@@ -143,6 +142,11 @@
   ansible.builtin.include_tasks: wsl.yml
   when: host_is_wsl | bool
 
+- name: Остановка до перезапуска сессии
+  ansible.builtin.fail:
+    msg: "Настройки применены. Выполните: {{ host_restart | join('; ') }}. Затем снова ./cluster.sh up."
+  when: host_restart | length > 0
+
 - name: Ключ etcd, TLS и hosts
   ansible.builtin.include_tasks: files.yml
 
@@ -151,11 +155,6 @@
   changed_when: false
   failed_when: false
   register: host_docker_info
-
-- name: Остановка до перезапуска сессии
-  ansible.builtin.fail:
-    msg: "Настройки применены. Выполните: {{ host_restart | join('; ') }}. Затем снова ./cluster.sh up."
-  when: host_restart | length > 0
 
 - name: Проверка доступа к Docker
   ansible.builtin.assert:

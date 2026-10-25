@@ -1,20 +1,29 @@
-# check → build (образ в registry.local) → deploy (тег образа в
+# check, test → build (образ в registry.local) → deploy (imageTag в
 # deploy/values-<env>.yaml; Argo CD разворачивает изменения из Git).
 # dev — автоматически из основной ветки, stage — вручную оттуда же,
 # prod — вручную из тега. Переменная CI/CD GITOPS_TOKEN — project access
-# token с ролью Developer и правом write_repository.
+# token с ролью Maintainer и правом write_repository.
 stages: [check, build, deploy]
 
-check:
+.node:
   stage: check
   image: node:24-alpine
-  script:
+  before_script:
     - npm ci --cache .npm --prefer-offline
-    - npm run lint
-    - npm run build
   cache:
     key: { files: [package-lock.json] }
     paths: [.npm/]
+
+check:
+  extends: .node
+  script:
+    - npm run lint
+    - npm run build
+
+test:
+  extends: .node
+  script:
+    - npm test
 
 build:
   stage: build
@@ -38,11 +47,14 @@ build:
     - apk add --no-cache git
     - git fetch origin "$CI_DEFAULT_BRANCH"
     - git checkout -B "$CI_DEFAULT_BRANCH" "origin/$CI_DEFAULT_BRANCH"
-    - sed -i "s/^  tag: .*/  tag: $CI_COMMIT_SHORT_SHA/" "deploy/values-$DEPLOY_ENV.yaml"
+    - sed -i '/^imageTag:/d' "deploy/values-$DEPLOY_ENV.yaml"
+    - 'echo "imageTag: $CI_COMMIT_SHORT_SHA" >> "deploy/values-$DEPLOY_ENV.yaml"'
     - git diff --quiet && exit 0
-    - git -c user.name="GitLab CI" -c user.email="ci@gitlab.local"
-      commit -am "deploy $DEPLOY_ENV: $CI_COMMIT_SHORT_SHA [skip ci]"
-    - git push "$(echo "$CI_REPOSITORY_URL" | sed "s#//[^@]*@#//oauth2:$GITOPS_TOKEN@#")" "$CI_DEFAULT_BRANCH"
+    - 'git -c user.name="GitLab CI" -c user.email="ci@gitlab.local" commit -am "deploy $DEPLOY_ENV: $CI_COMMIT_SHORT_SHA"'
+    # origin — внутренний адрес GitLab (clone_url Runner): без TLS *.local.
+    # ci.skip пропускает pipeline только этого push: в отличие от [skip ci]
+    # в сообщении, тег на таком коммите запускает pipeline.
+    - git push -o ci.skip "$(git remote get-url origin | sed "s#//[^@]*@#//oauth2:$GITOPS_TOKEN@#")" "$CI_DEFAULT_BRANCH"
 
 deploy-dev:
   extends: .deploy

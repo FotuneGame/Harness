@@ -10,9 +10,10 @@ try {
 const env = (name: string, fallback = '') => process.env[name] || fallback;
 
 export const config = {
+  // Имя приложения (Argo CD Application): группы Kafka, трейсы.
   name: env('APP_NAME', 'node-example'),
   port: Number(env('PORT', '3000')),
-  // Постоянная папка приложения: в кластере volumes/app/<приложение>.
+  // Постоянная папка приложения: в кластере volumes/app/<env>/<приложение>.
   appDataPath: env('APP_DATA_PATH', './app-data'),
 
   postgres: {

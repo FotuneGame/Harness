@@ -7,9 +7,10 @@
     "build": "nest build",
     "start": "nest start --watch",
     "start:prod": "node dist/main",
-    "lint": "oxlint --type-aware src/",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "dev": "bash scripts/dev.sh"
+    "lint": "oxlint --type-aware src/ test/",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "dev": "bash scripts/dev.sh",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "@clickhouse/client": "^1.24.1",
@@ -36,15 +37,29 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.10",
+    "@nestjs/testing": "^12.2.0",
     "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/multer": "^2.3.0",
     "@types/node": "^24.19.2",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
     "oxlint": "^1.89.0",
     "oxlint-tsgolint": "^7.0.2004",
     "prettier": "^3.9.10",
+    "supertest": "^7.3.1",
+    "ts-jest": "^29.4.15",
     "typescript": "^6.0.3"
   },
   "engines": {
     "node": ">=24"
+  },
+  "jest": {
+    "rootDir": ".",
+    "testRegex": "test/.*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "testEnvironment": "node"
   }
 }

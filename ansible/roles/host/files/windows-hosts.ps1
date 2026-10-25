@@ -1,11 +1,10 @@
-# Записывает в начало hosts Windows блок строк "127.0.0.1 <имя>" между маркерами
-# "# BEGIN platform" и "# END platform". Права администратора запрашиваются
-# через UAC только при изменении файла.
 param(
     [Parameter(Mandatory = $true)]
     [string]$Names
 )
 
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+trap { Write-Output "error: $($_.Exception.Message)"; exit 1 }
 $ErrorActionPreference = "Stop"
 $path = Join-Path $env:WINDIR "System32\drivers\etc\hosts"
 $begin = "# BEGIN platform"
@@ -17,7 +16,6 @@ $kept = foreach ($line in Get-Content -LiteralPath $path) {
     if ($line -eq $end) { $inside = $false; continue }
     if (-not $inside) { $line }
 }
-# По одному имени в строке: Windows читает из строки hosts не больше 9 имён.
 $entries = foreach ($name in $Names -split ',') { "127.0.0.1 $name" }
 $content = @($begin) + @($entries) + @($end) + @($kept)
 

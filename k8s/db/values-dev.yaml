@@ -1,0 +1,12 @@
+# Веб-интерфейсы: https://platform.local/dev/<сервис>.
+redisinsight:
+  proxyPath: /dev/redis
+
+kibana:
+  configuration:
+    server:
+      basePath: /dev/kibana
+
+pgadmin4:
+  env:
+    contextPath: /dev/pgadmin

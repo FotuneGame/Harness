@@ -1,4 +1,3 @@
-# Namespace app: узел apps и папку /app-data поду добавляет платформа.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,11 +14,13 @@ spec:
       labels:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      nodeSelector:
+        platform.node: apps
       imagePullSecrets:
         - name: {{ .Values.imagePullSecret }}
       containers:
         - name: app
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image }}:{{ required "imageTag записывает CI (deploy-<env>)" .Values.imageTag }}"
           ports:
             - name: http
               containerPort: 3000
@@ -28,36 +29,13 @@ spec:
               value: {{ .Release.Name }}
             {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
-              value: {{ $value | quote }}
+              value: {{ tpl $value $ | quote }}
             {{- end }}
-            # Логины и пароли — Secret из Vault (app/*, db/redis); база = логин.
-            - name: POSTGRES_USER
+            {{- range $name, $ref := .Values.secretEnv }}
+            - name: {{ $name }}
               valueFrom:
-                secretKeyRef: { name: postgresql-credentials, key: username }
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef: { name: postgresql-credentials, key: username }
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: postgresql-credentials, key: password }
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: redis-credentials, key: password }
-            - name: CLICKHOUSE_USER
-              valueFrom:
-                secretKeyRef: { name: clickhouse-credentials, key: username }
-            - name: CLICKHOUSE_DB
-              valueFrom:
-                secretKeyRef: { name: clickhouse-credentials, key: username }
-            - name: CLICKHOUSE_PASSWORD
-              valueFrom:
-                secretKeyRef: { name: clickhouse-credentials, key: password }
-            - name: S3_ACCESS_KEY
-              valueFrom:
-                secretKeyRef: { name: minio-credentials, key: username }
-            - name: S3_SECRET_KEY
-              valueFrom:
-                secretKeyRef: { name: minio-credentials, key: password }
+                secretKeyRef: { name: {{ $ref.secret }}, key: {{ $ref.key }} }
+            {{- end }}
           readinessProbe:
             httpGet: { path: /health/live, port: http }
           livenessProbe:

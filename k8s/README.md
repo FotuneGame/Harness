@@ -1,51 +1,64 @@
 # Helm charts платформы
 
-Каждый каталог — chart одного namespace. Окружение (dev, stage, prod) выбирается
-при развёртывании: `./cluster.sh up <env>`.
+Каталог `k8s/<папка>` — chart одной папки. Папка задаёт namespace, путь
+секретов в Vault и каталог данных в `volumes/`:
+
+| Вид | Папки | Namespace | Vault | Данные |
+|---|---|---|---|---|
+| Общие (один экземпляр) | `vcs`, `cicd`, `proxy`, `secret`, `logs`, `backup` | `<папка>` | `<папка>/<секрет>` | `volumes/<папка>/...` |
+| Окружения dev, stage, prod | `db`, `mb`, `llm`, `acl`, `app` | `<папка>-<env>` | `<папка>/<env>/<секрет>` | `volumes/<папка>/<env>/...` |
+| Служебные | `foundation`, `gpu` | default, kube-system | — | — |
+
+`./cluster.sh up` разворачивает все общие charts и все три окружения, `./cluster.sh up
+--dev` (`--stage`, `--prod`, можно несколько) — общие charts и выбранные окружения.
+`db-prod` ставится всегда: в его PostgreSQL и Redis работает GitLab (без prod —
+только они, `allServices: false`).
 
 ## Структура chart
 
 ```
-k8s/<chart>/
+k8s/<папка>/
   Chart.yaml          официальные charts — в dependencies
   Chart.lock          зафиксированные версии зависимостей
-  values.yaml         общие значения для всех окружений
-  values-dev.yaml     только отличия dev
-  values-stage.yaml   только отличия stage
-  values-prod.yaml    только отличия prod
+  values.yaml         общие значения (для окружений — общие для dev, stage, prod)
+  values-<env>.yaml   только отличия окружения (charts окружений)
   templates/          только то, для чего нет официального chart
   charts/             скачанные зависимости (не в Git, кроме secret)
 ```
 
 | Chart | Namespace | Релиз | Что внутри |
 |---|---|---|---|
-| `foundation` | default | `platform-foundation` | Namespace, StorageClass `local`, PersistentVolume |
+| `foundation` | default | `platform-foundation` | Namespace, NetworkPolicy окружений (и доступ общих сервисов — `usedBy`), StorageClass `local`, PersistentVolume |
 | `secret` | secret | `platform-secret` | Vault, Vault Secrets Operator, синхронизация секретов |
-| `proxy` | proxy | `platform-proxy` | NGINX Ingress, маршруты `*.local`, DaemonSet `node-hosts` (имена `*.local` и CA для Docker узлов) |
+| `proxy` | proxy | `platform-proxy` | NGINX Ingress (TLS), маршруты, DaemonSet `node-hosts` (имена `*.local` и CA для Docker узлов) |
 | `gpu` | kube-system | `platform-gpu` | HAMi (Ubuntu, лимиты VRAM) или NVIDIA device plugin (WSL2) |
-| `db` | db | `platform-db` | PostgreSQL, pgAdmin, Redis, RedisInsight, ClickHouse, Elasticsearch |
-| `mb` | mb | `platform-mb` | Kafka, Kafka UI |
-| `acl` | acl | `platform-acl` | Keycloak |
-| `backup` | backup | `platform-backup` | MinIO, K8up |
-| `llm` | llm | `platform-llm` | llama.cpp, Open WebUI |
-| `logs` | logs | `platform-logs` | Prometheus, Alertmanager, Grafana, Jaeger, exporters |
-| `vcs` | vcs | `gitlab` | GitLab, Container Registry |
+| `backup` | backup | `platform-backup` | K8up, MinIO; Schedule резервного копирования во всех namespace с данными |
+| `logs` | logs | `platform-logs` | Prometheus, Alertmanager, Grafana (дашборды), Jaeger |
+| `vcs` | vcs | `gitlab` | GitLab, Container Registry, MinIO для объектов GitLab |
 | `cicd` | cicd | `platform-cicd` | Argo CD, GitLab Runner, Kyverno |
-| `app` | app | `platform-app` | PVC `app-data`, политика Kyverno: папка `volumes/app/<приложение>` в `/app-data` |
+| `db` | db-`<env>` | `db-<env>` | PostgreSQL + pgAdmin, Redis + RedisInsight, ClickHouse, Elasticsearch + Kibana; базы сервисов из других namespace (Keycloak, в prod — GitLab) |
+| `mb` | mb-`<env>` | `mb-<env>` | Kafka + Kafka UI |
+| `llm` | llm-`<env>` | `llm-<env>` | llama.cpp (API и веб-интерфейс) |
+| `acl` | acl-`<env>` | `acl-<env>` | Keycloak (база — PostgreSQL окружения) |
+| `app` | app-`<env>` | `app-<env>` | Папка `/app-data` для приложений из Argo CD (PVC и политика Kyverno) |
 
 ## Правила
 
-1. Есть официальный chart — подключайте его в `dependencies` в `Chart.yaml` с
-   `condition: <имя>.enabled`, настройки пишите под ключом `<имя>:` в
-   `values.yaml`. Свои шаблоны в `templates/` — только если официального chart нет.
+1. Есть официальный chart — подключайте его в `dependencies` в `Chart.yaml`,
+   настройки пишите под ключом `<имя>:` в `values.yaml`. Свои шаблоны в
+   `templates/` — только если официального chart нет (llama.cpp, RedisInsight,
+   Registry).
 2. Общее — в `values.yaml`, в `values-<env>.yaml` — только то, что отличается
-   (реплики, ресурсы, лимиты). Не копируйте `values.yaml` целиком.
+   (пути веб-интерфейсов, адреса, ресурсы). Не копируйте `values.yaml` целиком.
 3. Секретов в values нет. Значение хранится в Vault, Secret создаётся записью в
    `k8s/secret/values.yaml`, а сервис ссылается на него (`existingSecret` и т. п.).
-4. Каждому поду нужен `nodeSelector: { platform.node: core }` (или `llms` для
-   LLM). Поды в namespace `app` попадают на узел apps и получают папку
-   `volumes/app/<приложение>` в `/app-data` автоматически (chart `app`).
-5. Версии фиксированы: в `Chart.yaml` — версия chart, в values — тег образа
+4. Каждому поду нужен `nodeSelector`: `platform.node: core` — все сервисы,
+   `llms` — llama.cpp, `apps` — свои приложения в `app-<env>`.
+5. Сеть окружения закрыта: к подам `<папка>-<env>` подключаются только поды
+   того же окружения (метка namespace `platform.env`) и namespace `logs`, `proxy`.
+   Исключения — `environments.usedBy` в `k8s/foundation/values.yaml` (`vcs` →
+   `db-prod`); `stop`/`delete --<env>` не трогают перечисленные там сервисы.
+6. Версии фиксированы: в `Chart.yaml` — версия chart, в values — тег образа
    (кроме уже используемых `latest`/`main`). После смены версии закоммитьте
    `Chart.lock`, который обновит `./cluster.sh up`.
 
@@ -55,16 +68,15 @@ k8s/<chart>/
 
 | Действие | Команда |
 |---|---|
-| Применить все charts для окружения | `./cluster.sh up dev` (или `stage`, `prod`) |
+| Применить все charts | `./cluster.sh up` (только окружение: `./cluster.sh up --dev`) |
 | Проверить шаблоны | `helm lint k8s/db -f k8s/db/values-dev.yaml` |
-| Посмотреть итоговые манифесты | `helm template platform-db k8s/db -n db -f k8s/db/values-dev.yaml` |
-| Сравнить с кластером до применения | `helm template platform-db k8s/db -n db -f k8s/db/values-dev.yaml \| kubectl diff -n db -f -` |
-| Применить один chart | `helm upgrade --install platform-db k8s/db -n db -f k8s/db/values-dev.yaml --take-ownership --wait` |
-| Текущие values релиза | `helm get values platform-db -n db` |
-| История и откат | `helm history platform-db -n db`, `helm rollback platform-db <ревизия> -n db` |
+| Посмотреть итоговые манифесты | `helm template db-dev k8s/db -n db-dev -f k8s/db/values-dev.yaml` |
+| Сравнить с кластером до применения | `helm template db-dev k8s/db -n db-dev -f k8s/db/values-dev.yaml \| kubectl diff -n db-dev -f -` |
+| Текущие values релиза | `helm get values db-dev -n db-dev` |
+| История и откат | `helm history db-dev -n db-dev`, `helm rollback db-dev <ревизия> -n db-dev` |
 
-`llm`, `cicd`, `gpu` и `secret` применяйте только через `./cluster.sh up`: для
-них Ansible добавляет параметры (GPU, Runner, доли VRAM) и настраивает Vault.
+Применяйте charts через `./cluster.sh up`: Ansible передаёт логины из Vault,
+параметры GPU и Runner и настраивает Vault.
 
 Зависимости (`charts/*.tgz`) `./cluster.sh up` приводит к `Chart.yaml` сам:
 добавляет Helm-репозитории, скачивает недостающие архивы, удаляет лишние и при
@@ -75,94 +87,159 @@ k8s/<chart>/
 
 1. Найдите параметр в `values.yaml` chart (для официального chart — в его
    документации или `helm show values <repo>/<chart>`).
-2. Общее изменение — в `values.yaml`, только для окружения — в `values-<env>.yaml`:
+2. Для всех окружений — в `values.yaml`, только для одного — в `values-<env>.yaml`:
 
    ```yaml
-   # k8s/logs/values-prod.yaml
-   kube-prometheus-stack:
-     prometheus:
-       prometheusSpec:
-         retention: 30d
+   # k8s/db/values-prod.yaml
+   elasticsearch:
+     master:
+       heapSize: 1g
    ```
 
-3. Проверьте `helm template` / `kubectl diff`, затем `./cluster.sh up prod`.
+3. Проверьте `helm template` / `kubectl diff`, затем `./cluster.sh up`.
 
-## Добавить сервис в существующий namespace
+## Добавить сервис
 
-1. Подключите chart в `k8s/<chart>/Chart.yaml`:
+1. Подключите chart в `k8s/<папка>/Chart.yaml`:
 
    ```yaml
    dependencies:
      - name: mongodb
        version: 16.5.0
        repository: oci://registry-1.docker.io/bitnamicharts
-       condition: mongodb.enabled
    ```
 
 2. Добавьте настройки в `values.yaml` под ключом `mongodb:` (`fullnameOverride`,
    `nodeSelector`, ресурсы, `existingSecret`).
-3. Если нужны данные — см. «Хранение данных», пароль — «Секреты», веб-интерфейс —
-   «Адрес *.local».
-4. `./cluster.sh up <env>`: зависимость скачается, `Chart.lock` обновится —
-   закоммитьте его.
+3. Данные, пароль, веб-интерфейс — разделы ниже.
+4. `./cluster.sh up`: зависимость скачается, `Chart.lock` обновится — закоммитьте его.
 
-## Добавить новый namespace
+## Добавить папку
 
-1. Скопируйте структуру любого chart в `k8s/<имя>/` (Chart.yaml, values.yaml,
-   три `values-<env>.yaml`).
-2. Добавьте namespace в список `namespaces` в `k8s/foundation/values.yaml`.
-3. Добавьте релиз в `platform_releases` в
-   `ansible/roles/platform/defaults/main.yml` — порядок списка = порядок установки:
+1. Скопируйте структуру chart в `k8s/<папка>/` (для окружений — с тремя
+   `values-<env>.yaml`).
+2. В `k8s/foundation/values.yaml`: общая — в `namespaces`, окружений — ключ
+   `<папка>: {}` в `environments.folders`.
+3. Релизы — в `platform_releases` в `ansible/roles/platform/defaults/main.yml`
+   (порядок списка = порядок установки):
 
    ```yaml
-   - { name: platform-<имя>, chart: <имя> }
+   - { name: platform-<папка>, chart: <папка> }                            # общая
+   - { name: <папка>-dev, chart: <папка>, namespace: <папка>-dev, env: dev }  # и stage, prod
    ```
 
-4. `./cluster.sh up <env>`.
+4. Резервные копии — namespace в `schedule.namespaces` в `k8s/backup/values.yaml`.
+5. `./cluster.sh up`.
 
 ## Хранение данных
 
-Данные хранятся в `volumes/` через заранее созданные PersistentVolume:
+Данные хранятся в `volumes/` через заранее созданные PersistentVolume
+(`k8s/foundation/values.yaml`):
 
-1. Добавьте том в `volumes` в `k8s/foundation/values.yaml`:
+- окружений — в `environments.folders.<папка>.volumes`, каталог
+  `volumes/<папка>/<env>/<path>`, PV `pv-<папка>-<env>-<path>`:
 
-   ```yaml
-   - { name: pv-db-mongo, size: 5Gi, path: db/mongo, claim: db/mongodb }
-   ```
+  ```yaml
+  db:
+    volumes:
+      - { path: mongo, claim: datadir-mongodb-0, size: 5Gi }
+  ```
 
-   `claim` — namespace и точное имя PVC, которое создаст chart (смотрите в
-   `helm template ... | grep -A3 "kind: PersistentVolumeClaim"`); `node: llms` —
-   если сервис работает на узле llms.
-2. Создайте `volumes/db/mongo/.gitkeep`.
-3. В values сервиса укажите `storageClass: local` и тот же размер.
+- общих сервисов — в `volumes`, каталог `volumes/<path>`, PV `pv-<path через дефис>`:
+
+  ```yaml
+  - { path: vcs/mongo, claim: vcs/datadir-mongodb-0, size: 5Gi }
+  ```
+
+`claim` — точное имя PVC, которое создаст chart (`helm template ... | grep -A3
+"kind: PersistentVolumeClaim"`); узел не core — `node: llms` или `apps` (у
+окружений — у папки). Создайте каталоги с `.gitkeep` (для окружений — в dev, stage и prod);
+права на запись `./cluster.sh up` выставит сам. В values сервиса укажите
+`storageClass: local` и тот же размер.
+
+## Резервные копии
+
+K8up раз в сутки (02:00) копирует PVC каждого namespace из
+`schedule.namespaces` (`k8s/backup/values.yaml`) в MinIO namespace `backup`.
+Каталог копии повторяет каталог данных: `volumes/db/dev` →
+`volumes/backups/volumes/db/dev` (репозиторий restic, пароль — Vault
+`backup/restic`). Хранятся 7 последних и 7 ежедневных копий. Если в 02:00
+сервер был выключен, копию создадут `./cluster.sh start` и `up` (когда за сутки
+успешной не было). Кроме данных сервисов копируются файлы сервера:
+`volumes/proxy/tls` (CA и сертификат `*.local`) и `volumes/vcs/rails` (ключи
+шифрования базы GitLab) — PV с `hostFiles: true` в `k8s/foundation/values.yaml`.
+Без копий: `cicd`, `acl-<env>` (данных нет, Keycloak хранит всё в PostgreSQL
+окружения), `llm-<env>` (модели скачиваются заново), `backup`. Восстановление
+PVC из копии: ID копии — `kubectl get snapshots -n db-dev` (столбец с путём
+`/data/<PVC>`), затем остановите сервис и выполните:
+
+```bash
+kubectl apply -n db-dev -f - <<'EOF'
+apiVersion: k8up.io/v1
+kind: Restore
+metadata:
+  name: restore-pg
+spec:
+  snapshot: <ID>
+  podSecurityContext:
+    runAsUser: 0
+  restoreMethod:
+    folder:
+      claimName: data-postgresql-0
+  backend:
+    s3:
+      bucket: volumes/db/dev
+EOF
+```
 
 ## Секреты
 
-1. Добавьте Secret в `k8s/secret/values.yaml`:
+1. Добавьте Secret в `k8s/secret/values.yaml` (путь — по папке):
 
    ```yaml
    secrets:
-     db:
-       mongodb-credentials: { path: db/mongodb }
+     db-dev:
+       mongodb-credentials: { path: db/dev/mongodb }
    ```
 
    Namespace получит доступ только к перечисленным путям Vault.
-2. Значение: на новом кластере — добавьте путь в `platform_vault_seed`
-   (`ansible/roles/platform/defaults/main.yml`, `null` — случайный пароль); на
-   работающем — запишите его в Vault UI (https://vault.local, путь `kv/db/mongodb`).
+2. Начальное значение — путь в `platform_vault_seed`
+   (`ansible/roles/platform/defaults/main.yml`, `null` — случайный пароль), или
+   запишите его в Vault UI (https://vault.local, путь `kv/db/dev/mongodb`).
 3. Сошлитесь на Secret `mongodb-credentials` из values сервиса.
+4. `./cluster.sh up`: изменение списка секретов применяется к Vault (попросит
+   3 unseal key).
 
-Политики Vault создаются при его инициализации. Для нового namespace или пути на
-работающем кластере добавьте политику и роль вручную (root token через
-`vault operator generate-root`) или пересоздайте кластер с очисткой `volumes/`.
+## База PostgreSQL для сервиса
 
-## Адрес *.local
-
-Добавьте маршрут в `routes` в `k8s/proxy/values.yaml`:
+Сервису из другого namespace (как Keycloak и GitLab) своя роль и база в
+PostgreSQL окружения — в `serviceDatabases.databases` (`k8s/db/values.yaml` или
+`values-<env>.yaml`):
 
 ```yaml
-- { host: mongo.local, namespace: db, service: mongo-express, port: 8081 }
+serviceDatabases:
+  databases:
+    mongo_app: { secret: mongo-app-db-credentials, extensions: [pg_trgm] }
 ```
 
-`./cluster.sh up` сам пропишет имя в hosts, CoreDNS и `/etc/hosts` узлов и
-перевыпустит TLS-сертификат.
+Secret (логин и пароль из Vault `db/<env>/...`) нужен в `db-<env>` и в namespace
+сервиса (`k8s/secret/values.yaml`). Задача Helm при каждом `up` создаёт роль и
+базу и выставляет пароль из Vault; сервис подключается к
+`postgresql.db-<env>.svc.cluster.local:5432`.
+
+## Веб-интерфейс
+
+Маршрут — в `routes` в `k8s/proxy/values.yaml`:
+
+```yaml
+# окружение: https://platform.local/dev/mongo
+- { host: platform.local, path: /dev/mongo, namespace: db-dev, service: mongo-express, port: 8081 }
+# общий сервис: https://mongo.local
+- { host: mongo.local, namespace: vcs, service: mongo-express, port: 8081 }
+```
+
+Сервис окружения должен сам работать под путём `/<env>/<сервис>` (настройка
+base path / context path в `values-<env>.yaml`); если не умеет — добавьте
+`stripPath: true`, тогда путь убирается перед передачей сервису. `./cluster.sh up`
+сам пропишет имена в hosts, CoreDNS и `/etc/hosts` узлов и перевыпустит
+TLS-сертификат.

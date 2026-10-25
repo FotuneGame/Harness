@@ -5,3 +5,4 @@ deploy
 scripts
 .env
 .git
+test

@@ -1,18 +1,36 @@
-# Маршруты HTTPS: host -> Service в namespace. По этому же списку Ansible
-# прописывает имена в hosts и выпускает TLS-сертификат.
+# Маршруты HTTPS: host и path -> Service в namespace. Веб-интерфейсы окружений —
+# https://platform.local/<env>/<сервис> (сервис сам работает под этим путём;
+# stripPath — путь убирается перед передачей сервису). По этому же списку
+# Ansible прописывает имена в hosts и выпускает TLS-сертификат.
 routes:
-  - { host: pg.local, namespace: db, service: pgadmin, port: 80 }
-  - { host: redis.local, namespace: db, service: redisinsight, port: 5540 }
-  - { host: clickhouse.local, namespace: db, service: clickhouse, port: 8123 }
-  - { host: kafka.local, namespace: mb, service: kafka-ui, port: 80 }
-  - { host: llama.local, namespace: llm, service: open-webui, port: 8080 }
-  - { host: keycloak.local, namespace: acl, service: keycloak, port: 8080 }
+  - { host: platform.local, path: /dev/pgadmin, namespace: db-dev, service: pgadmin, port: 80 }
+  - { host: platform.local, path: /dev/redis, namespace: db-dev, service: redisinsight, port: 5540 }
+  - { host: platform.local, path: /dev/clickhouse, stripPath: true, namespace: db-dev, service: clickhouse, port: 8123 }
+  - { host: platform.local, path: /dev/kibana, namespace: db-dev, service: kibana, port: 5601 }
+  - { host: platform.local, path: /dev/kafka, namespace: mb-dev, service: kafka-ui, port: 80 }
+  - { host: platform.local, path: /dev/keycloak, namespace: acl-dev, service: keycloak, port: 8080 }
+  - { host: platform.local, path: /dev/llama, namespace: llm-dev, service: llama, port: 8080 }
+  - { host: platform.local, path: /stage/pgadmin, namespace: db-stage, service: pgadmin, port: 80 }
+  - { host: platform.local, path: /stage/redis, namespace: db-stage, service: redisinsight, port: 5540 }
+  - { host: platform.local, path: /stage/clickhouse, stripPath: true, namespace: db-stage, service: clickhouse, port: 8123 }
+  - { host: platform.local, path: /stage/kibana, namespace: db-stage, service: kibana, port: 5601 }
+  - { host: platform.local, path: /stage/kafka, namespace: mb-stage, service: kafka-ui, port: 80 }
+  - { host: platform.local, path: /stage/keycloak, namespace: acl-stage, service: keycloak, port: 8080 }
+  - { host: platform.local, path: /stage/llama, namespace: llm-stage, service: llama, port: 8080 }
+  - { host: platform.local, path: /prod/pgadmin, namespace: db-prod, service: pgadmin, port: 80 }
+  - { host: platform.local, path: /prod/redis, namespace: db-prod, service: redisinsight, port: 5540 }
+  - { host: platform.local, path: /prod/clickhouse, stripPath: true, namespace: db-prod, service: clickhouse, port: 8123 }
+  - { host: platform.local, path: /prod/kibana, namespace: db-prod, service: kibana, port: 5601 }
+  - { host: platform.local, path: /prod/kafka, namespace: mb-prod, service: kafka-ui, port: 80 }
+  - { host: platform.local, path: /prod/keycloak, namespace: acl-prod, service: keycloak, port: 8080 }
+  - { host: platform.local, path: /prod/llama, namespace: llm-prod, service: llama, port: 8080 }
   - { host: vault.local, namespace: secret, service: vault, port: 8200 }
   - { host: grafana.local, namespace: logs, service: logs-grafana, port: 80 }
   - { host: prometheus.local, namespace: logs, service: logs-prometheus, port: 9090 }
   - { host: alert.local, namespace: logs, service: logs-alertmanager, port: 9093 }
   - { host: jaeger.local, namespace: logs, service: jaeger, port: 16686 }
   - { host: argocd.local, namespace: cicd, service: argocd-server, port: 80 }
+  - { host: backups.local, namespace: backup, service: minio-console, port: 9090 }
   - host: registry.local
     namespace: vcs
     service: registry

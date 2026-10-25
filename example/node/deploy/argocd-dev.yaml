@@ -1,0 +1,25 @@
+# Один раз, после первого deploy-dev: 
+# kubectl apply -f deploy/argocd-dev.yaml
+# или
+# kubectl apply -f example/node/deploy/argocd-dev.yaml
+# Stage и prod — deploy/argocd-stage.yaml и deploy/argocd-prod.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-example
+  namespace: cicd
+spec:
+  project: default
+  source:
+    repoURL: http://gitlab-webservice-default.vcs.svc.cluster.local:8181/main/node.git
+    targetRevision: main
+    path: deploy
+    helm:
+      valueFiles: [values.yaml, values-dev.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

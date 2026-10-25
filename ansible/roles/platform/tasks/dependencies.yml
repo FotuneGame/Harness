@@ -1,6 +1,4 @@
 ---
-# charts/*.tgz пересобираются, если не совпадают с Chart.yaml (лишний архив
-# Helm тоже установил бы).
 - name: Charts с устаревшими зависимостями
   ansible.builtin.shell: |
     for chart in {{ platform_dependency_charts | join(' ') }}; do
@@ -25,8 +23,6 @@
        | map(attribute='repository') | select('match', '^https://') | unique }}
   changed_when: false
 
-# build берёт версии из Chart.lock. Если Chart.yaml изменён, а Chart.lock нет,
-# выполняется update: он пересоздаёт Chart.lock (закоммитьте его).
 - name: Загрузка зависимостей
   ansible.builtin.shell: |
     helm dependency build "$CHART" && exit 0

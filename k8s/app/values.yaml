@@ -1,16 +1,13 @@
-# Каждый под namespace app получает папку volumes/app/<имя приложения>,
-# смонтированную во все контейнеры по пути mountPath (политика Kyverno).
-# Имя приложения — значение первой найденной метки пода из nameLabels
-# (для Helm-приложений Argo CD app.kubernetes.io/instance = имя Application),
-# если меток нет — defaultName.
+# Поды приложений в namespace app-<env> (узел apps) получают папку
+# volumes/app/<env>/<имя> в /app-data. Имя — первая метка из nameLabels,
+# иначе defaultName.
 appData:
   claim: app-data
-  size: 50Gi
+  size: 20Gi
   mountPath: /app-data
   nameLabels:
     - app.kubernetes.io/instance
     - app.kubernetes.io/name
     - app
   defaultName: shared
-  # Init-контейнер открывает папку на запись для контейнеров не от root.
   initImage: busybox:1.37

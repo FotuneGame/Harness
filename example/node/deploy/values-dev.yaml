@@ -1,2 +1,2 @@
-image:
-  tag: latest
+stage: dev
+imageTag: 83921cb9

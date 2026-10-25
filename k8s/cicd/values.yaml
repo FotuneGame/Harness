@@ -10,6 +10,21 @@ argo-cd:
     # TLS завершается на ingress; иначе ERR_TOO_MANY_REDIRECTS.
     params:
       server.insecure: true
+  server:
+    resources: { requests: { cpu: 100m, memory: 256Mi } }
+  controller:
+    resources: { requests: { cpu: 100m, memory: 512Mi } }
+  repoServer:
+    resources: { requests: { cpu: 100m, memory: 256Mi } }
+  applicationSet:
+    resources: { requests: { cpu: 50m, memory: 128Mi } }
+  # Вход только пользователем admin: SSO (Dex) не нужен.
+  dex:
+    enabled: false
+  # Образ Docker Hub — через зеркало узлов (по умолчанию ecr-public.aws.com).
+  redis:
+    image:
+      repository: redis
 
 # Kyverno монтирует папки приложений (k8s/app): нужен только admission controller.
 kyverno:
@@ -34,6 +49,7 @@ gitlab-runner:
   nodeSelector:
     platform.node: core
   gitlabUrl: http://gitlab-webservice-default.vcs.svc.cluster.local:8181
+  concurrent: 2
   rbac:
     create: true
   runners:

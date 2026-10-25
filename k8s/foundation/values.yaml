@@ -1,45 +1,59 @@
-namespaces:
-  - proxy
-  - vcs
-  - cicd
-  - db
-  - mb
-  - llm
-  - secret
-  - acl
-  - backup
-  - logs
+# Общие namespace (k8s/<папка>): один экземпляр на все окружения.
+namespaces: [proxy, vcs, cicd, secret, backup, logs]
 
-# Namespace приложений из Argo CD: поды автоматически получают nodeSelector и
-# toleration узла apps (admission-плагины PodNodeSelector и
-# PodTolerationRestriction включает Terraform при создании кластера).
-appNamespace:
-  name: app
-  nodeSelector: platform.node=apps
-  tolerations: '[{"key":"workload","operator":"Equal","value":"apps","effect":"NoSchedule"}]'
+# Окружения: namespace <папка>-<env> с меткой platform.env. К их подам
+# подключаются только поды того же окружения и namespace из allowNamespaces
+# (NetworkPolicy, CNI Calico).
+environments:
+  names: [dev, stage, prod]
+  allowNamespaces: [logs, proxy]
+  # Namespace окружений, которыми пользуются общие сервисы: к ним разрешён доступ
+  # из namespaces, а ./cluster.sh stop и delete с флагом окружения не трогают
+  # services (метка app.kubernetes.io/name; аннотация platform/shared-services).
+  usedBy:
+    db-prod: { namespaces: [vcs], services: [postgresql, redis] }
+  # Папки окружений:
+  #   node        — узел томов (по умолчанию core);
+  #   tolerations — toleration подов namespace (узел apps с taint);
+  #   volumes     — тома в volumes/<папка>/<env>/<path> (без path — весь каталог
+  #                 окружения) для PVC claim.
+  folders:
+    db:
+      volumes:
+        - { path: pg, claim: data-postgresql-0, size: 5Gi }
+        - { path: pgadmin, claim: pgadmin, size: 1Gi }
+        - { path: redis, claim: redis-data-redis-master-0, size: 2Gi }
+        - { path: ch, claim: data-clickhouse-shard0-0, size: 10Gi }
+        - { path: es, claim: data-elasticsearch-master-0, size: 10Gi }
+    mb:
+      volumes:
+        - { path: kafka, claim: data-kafka-controller-0, size: 5Gi }
+    llm:
+      node: llms
+      volumes:
+        - { path: llama, claim: models-llama-0, size: 20Gi }
+    acl: {}
+    app:
+      node: apps
+      tolerations: '[{"key":"workload","operator":"Equal","value":"apps","effect":"NoSchedule"}]'
+      volumes:
+        - { claim: app-data, size: 20Gi, accessMode: ReadWriteMany }
 
-# PersistentVolume с данными в каталоге volumes/ репозитория
-# (смонтирован в узлы как /volumes).
-#   path  — подкаталог volumes/;
-#   node  — значение метки platform.node узла (по умолчанию core);
-#   claim — namespace/имя PVC, к которому PV привязан заранее;
-#   accessMode — по умолчанию ReadWriteOnce.
+# Тома общих сервисов в volumes/<path>; PV называется pv-<path через дефис>.
+#   claim      — namespace/имя PVC, к которому PV привязан заранее (у PVC,
+#                которые создают операторы, его нет: PV выбирается по
+#                volumeName или метке labels);
+#   node       — узел (по умолчанию core), accessMode — по умолчанию ReadWriteOnce;
+#   hostFiles  — файлы сервера (их пишет Ansible): PVC создаётся здесь же только
+#                для резервного копирования K8up, права каталога не меняются.
 volumes:
-  - { name: pv-db-pg, size: 5Gi, path: db/pg, claim: db/data-postgresql-0 }
-  - { name: pv-db-pgadmin, size: 2Gi, path: db/pgadmin, claim: db/pgadmin }
-  - { name: pv-db-redis, size: 2Gi, path: db/redis, claim: db/redis-data-redis-master-0 }
-  - { name: pv-db-ch, size: 10Gi, path: db/ch, claim: db/data-clickhouse-shard0-0 }
-  - { name: pv-db-es, size: 10Gi, path: db/es, claim: db/data-elasticsearch-master-0 }
-  - { name: pv-mb, size: 5Gi, path: mb, claim: mb/data-kafka-controller-0 }
-  - { name: pv-llm-llama, size: 30Gi, path: llm/llama, claim: llm/models-llama-0, node: llms }
-  - { name: pv-llm-webui, size: 2Gi, path: llm/webui, claim: llm/open-webui, node: llms }
-  - { name: pv-secret, size: 2Gi, path: secret, claim: secret/data-vault-0 }
-  - { name: pv-vcs-registry, size: 10Gi, path: vcs/registry, claim: vcs/data-registry-0 }
-  - { name: pv-backups, size: 20Gi, path: backups, claim: backup/minio }
-  - { name: pv-logs-grafana, size: 2Gi, path: logs/grafana, claim: logs/logs-grafana }
-  # Папки приложений из Argo CD: volumes/app/<приложение> (k8s/app).
-  - { name: pv-app, size: 50Gi, path: app, claim: app/app-data, node: apps, accessMode: ReadWriteMany }
-  # PVC создают операторы и chart GitLab: PV выбираются по volumeName или метке.
-  - { name: pv-logs-prometheus, size: 10Gi, path: logs/prometheus }
-  - { name: pv-logs-alertmanager, size: 1Gi, path: logs/alertmanager }
-  - { name: pv-vcs-gitaly, size: 10Gi, path: vcs/gitaly, labels: { volume: gitaly } }
+  - { path: proxy/tls, claim: proxy/tls, size: 10Mi, hostFiles: true }
+  - { path: secret, claim: secret/data-vault-0, size: 2Gi }
+  - { path: vcs/registry, claim: vcs/data-registry-0, size: 10Gi }
+  - { path: vcs/minio, claim: vcs/minio, size: 10Gi }
+  - { path: vcs/gitaly, labels: { volume: gitaly }, size: 10Gi }
+  - { path: vcs/rails, claim: vcs/gitlab-rails-secret, size: 10Mi, hostFiles: true }
+  - { path: backups, claim: backup/minio, size: 50Gi }
+  - { path: logs/grafana, claim: logs/logs-grafana, size: 2Gi }
+  - { path: logs/prometheus, size: 10Gi }
+  - { path: logs/alertmanager, size: 1Gi }

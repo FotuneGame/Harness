@@ -1,3 +1,4 @@
+{{- if .Values.allServices }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,10 +19,16 @@ spec:
           image: {{ .Values.redisinsight.image }}
           ports:
             - containerPort: 5540
+          env:
+            - { name: RI_PROXY_PATH, value: {{ .Values.redisinsight.proxyPath | quote }} }
+            - { name: RI_REDIS_HOST, value: redis-master }
+            - { name: RI_REDIS_PORT, value: "6379" }
+            - { name: RI_REDIS_ALIAS, value: redis }
+            - name: RI_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: redis-credentials, key: password }
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
+            requests: { cpu: 25m, memory: 128Mi }
 ---
 apiVersion: v1
 kind: Service
@@ -32,22 +39,4 @@ spec:
     app: redisinsight
   ports:
     - port: 5540
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: redisinsight
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: redisinsight
-  minReplicas: 1
-  maxReplicas: {{ .Values.redisinsight.maxReplicas }}
-  metrics:
-    - type: Resource
-      resource:
-        name: cpu
-        target:
-          type: Utilization
-          averageUtilization: {{ .Values.redisinsight.targetCPUUtilizationPercentage }}
+{{- end }}

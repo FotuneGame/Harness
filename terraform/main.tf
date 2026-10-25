@@ -1,33 +1,29 @@
 locals {
   profile = "minikube"
 
-  # Minikube называет узлы по порядку создания; первый — control plane.
   node_names = { core = "minikube", llms = "minikube-m02", apps = "minikube-m03" }
 
-  # Узел apps принимает только поды с toleration (namespace app получает её автоматически).
   taints = { apps = "workload=apps:NoSchedule" }
 
   volumes = abspath("${path.root}/../volumes")
 
-  # Файл кладёт Ansible в ~/.minikube/files: minikube копирует его в узел до
-  # запуска kube-apiserver, и Secret в etcd шифруются с первого старта.
   encryption_config = "/var/lib/minikube/certs/encryption-config.yaml"
 
-  # Плагины по умолчанию minikube + PodNodeSelector и PodTolerationRestriction
-  # для размещения namespace app на узле apps.
   admission_plugins = join(",", [
     "NamespaceLifecycle", "LimitRanger", "ServiceAccount", "DefaultStorageClass",
     "DefaultTolerationSeconds", "NodeRestriction", "MutatingAdmissionWebhook",
     "ValidatingAdmissionWebhook", "ResourceQuota", "PodNodeSelector", "PodTolerationRestriction",
   ])
 
-  # Параметры компонентов Kubernetes. kubelet по умолчанию скачивает образы по
-  # одному: при медленном Docker Hub один большой образ задерживает все поды узла.
   extra_config = [
     "apiserver.encryption-provider-config=${local.encryption_config}",
     "apiserver.enable-admission-plugins=${local.admission_plugins}",
     "kubelet.serialize-image-pulls=false",
   ]
+
+  disk_gib = max([for node in values(var.nodes) : node.disk_gib]...)
+
+  cni = "calico"
 
   allocated = {
     cpus       = sum([for node in values(var.nodes) : node.cpus])
@@ -36,24 +32,21 @@ locals {
     vram_mib   = sum([for node in values(var.nodes) : node.vram_mib])
   }
 
-  # Параметры minikube start. Ресурсы узлов llms/apps и доли VRAM меняются
-  # без пересоздания кластера.
   cluster_shape = {
     nodes              = length(var.nodes)
-    core               = [var.nodes.core.cpus, var.nodes.core.memory_gib, var.nodes.core.disk_gib]
+    core               = [var.nodes.core.cpus, var.nodes.core.memory_gib, local.disk_gib]
     gpu                = var.gpu
     kubernetes_version = var.kubernetes_version
     registry_mirrors   = var.registry_mirrors
     extra_config       = local.extra_config
+    cni                = local.cni
   }
 
-  # Параметры для Ansible: host читает через terraform console, platform — output.
   ansible = {
     profile            = local.profile
     wsl_memory_gib     = var.host.memory_gib
     kubernetes_version = var.kubernetes_version
     encryption_config  = local.encryption_config
-    # Узлы с долей VRAM для HAMi: devicememoryscaling = доля от видеокарты.
     gpu_nodes = {
       for role, node in var.nodes : local.node_names[role] => {
         role           = role
@@ -64,8 +57,6 @@ locals {
   }
 }
 
-# Кластер Minikube (драйвер docker). Изменение числа узлов, ресурсов core, GPU,
-# зеркал или версии Kubernetes пересоздаёт кластер; данные в volumes/ сохраняются.
 resource "terraform_data" "cluster" {
   triggers_replace = local.cluster_shape
   input            = local.profile
@@ -88,9 +79,6 @@ resource "terraform_data" "cluster" {
       set -euo pipefail
       test -f "$HOME/.minikube/files${local.encryption_config}" || {
         echo "Нет ключа шифрования etcd: сначала выполните ./cluster.sh up" >&2; exit 1; }
-      # Остатки прежнего кластера этого профиля (например, после переустановки
-      # WSL ~/.minikube новый, а контейнеры и тома Docker старые): их
-      # сертификаты не подходят к новому CA, minikube start на них падает.
       minikube delete --profile ${local.profile} >/dev/null 2>&1 || true
       stale='^${local.profile}(-m[0-9]+)?$'
       docker ps -a --filter label=created_by.minikube.sigs.k8s.io=true --format '{{.Names}}' \
@@ -103,9 +91,9 @@ resource "terraform_data" "cluster" {
       fi
       minikube start --profile ${local.profile} --driver docker \
         --kubernetes-version ${var.kubernetes_version} \
-        --nodes ${length(var.nodes)} \
+        --nodes ${length(var.nodes)} --cni ${local.cni} \
         --cpus ${var.nodes.core.cpus} --memory ${var.nodes.core.memory_gib}g \
-        --disk-size ${var.nodes.core.disk_gib}g \
+        --disk-size ${local.disk_gib}g \
         --mount --mount-string "${local.volumes}:/volumes" \
         ${join(" ", [for mirror in var.registry_mirrors : "--registry-mirror ${mirror}"])} \
         ${join(" ", [for option in local.extra_config : "--extra-config ${option}"])} \

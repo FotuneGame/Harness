@@ -37,5 +37,16 @@ nvidia-device-plugin:
     platform.gpu: "on"
   # По умолчанию chart требует метки Node Feature Discovery, которых в minikube нет.
   affinity: null
+  # Видеокарту делят llama.cpp трёх окружений (dev, stage, prod).
+  config:
+    default: shared
+    map:
+      shared: |
+        version: v1
+        sharing:
+          timeSlicing:
+            resources:
+              - name: nvidia.com/gpu
+                replicas: 3
   tolerations:
     - operator: Exists

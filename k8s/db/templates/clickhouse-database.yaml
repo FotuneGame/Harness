@@ -1,0 +1,34 @@
+{{- if .Values.allServices }}
+# База ClickHouse с именем логина (Vault db/<env>/clickhouse): chart создаёт только
+# пользователя.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-database
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        platform.node: core
+      containers:
+        - name: create
+          image: {{ .Values.clickhouseDatabase.image }}
+          command: [sh, -ec]
+          args:
+            - >-
+              curl -sSf --retry 30 --retry-all-errors --retry-delay 5
+              -u "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" http://clickhouse:8123/
+              --data-binary "CREATE DATABASE IF NOT EXISTS $CLICKHOUSE_USER"
+          env:
+            - name: CLICKHOUSE_USER
+              valueFrom:
+                secretKeyRef: { name: clickhouse-credentials, key: username }
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: clickhouse-credentials, key: password }
+{{- end }}

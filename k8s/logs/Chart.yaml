@@ -1,26 +1,12 @@
 apiVersion: v2
 name: logs
-description: Prometheus, Alertmanager, Grafana, Jaeger и экспортеры метрик
+description: Prometheus, Alertmanager, Grafana и Jaeger
 type: application
-version: 0.2.0
+version: 0.3.0
 dependencies:
   - name: kube-prometheus-stack
     version: 92.9.0
     repository: https://prometheus-community.github.io/helm-charts
-    condition: kube-prometheus-stack.enabled
   - name: jaeger
     version: 4.16.1
     repository: https://jaegertracing.github.io/helm-charts
-    condition: jaeger.enabled
-  - name: prometheus-postgres-exporter
-    version: 8.2.0
-    repository: https://prometheus-community.github.io/helm-charts
-    condition: prometheus-postgres-exporter.enabled
-  - name: prometheus-redis-exporter
-    version: 6.34.0
-    repository: https://prometheus-community.github.io/helm-charts
-    condition: prometheus-redis-exporter.enabled
-  - name: prometheus-kafka-exporter
-    version: 4.0.0
-    repository: https://prometheus-community.github.io/helm-charts
-    condition: prometheus-kafka-exporter.enabled

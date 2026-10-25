@@ -1,4 +1,6 @@
-# Образы Bitnami — в bitnamilegacy/ (allowInsecureImages); docker.io — через зеркало.
+# Keycloak окружения (namespace acl-<env>, узел core). База — PostgreSQL
+# окружения (db-<env>, база keycloak); вход администратора — Vault acl/<env>/keycloak,
+# логин передаёт Ansible. TLS завершается на ingress, Keycloak работает по HTTP.
 global:
   imageRegistry: docker.io
   security:
@@ -11,26 +13,33 @@ keycloak:
   service:
     ports:
       http: 8080
-  # TLS завершается на ingress, Keycloak работает по HTTP.
+  # Путь веб-интерфейса (со слешем в конце) — values-<env>.yaml.
+  httpRelativePath: /
   proxyHeaders: xforwarded
   production: false
   usePasswordFiles: false
-  # Логин (auth.adminUser) — из Vault, его передаёт Ansible.
+  networkPolicy:
+    enabled: false
   auth:
     existingSecret: keycloak-credentials
     passwordSecretKey: password
   postgresql:
     enabled: false
   externalDatabase:
-    host: postgresql.db.svc.cluster.local
     port: 5432
     database: keycloak
     existingSecret: keycloak-db-credentials
     existingSecretUserKey: username
     existingSecretPasswordKey: password
-  nodeSelector:
-    platform.node: core
+  extraEnvVars:
+    - { name: JAVA_OPTS_KC_HEAP, value: -Xms128m -Xmx512m }
+  # Запуск при загруженном узле дольше проверки liveness (2 минуты).
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 60
+  nodeSelector: { platform.node: core }
   resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1Gi }

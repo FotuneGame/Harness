@@ -1,82 +1,22 @@
-# Официального chart llama.cpp нет (templates/); модель скачивается в volumes/llm/llama.
+# Официального chart llama.cpp нет (templates/llama.yaml). Узел llms, модель
+# скачивается в volumes/llm/<env>/llama. GPU и долю VRAM задаёт Ansible.
 llama:
   image:
     repository: ghcr.io/ggml-org/llama.cpp
     tag: server
-    pullPolicy: IfNotPresent
-    pullSecrets: []
   model:
     repository: bartowski/Qwen2.5-0.5B-Instruct-GGUF
     name: Qwen2.5-0.5B-Instruct
     quantization: Q4_K_M
-    # Имя файла; по умолчанию <name>-<quantization>.gguf.
-    file: ""
-  storage: 30Gi
+  storage: 20Gi
+  contextSize: 8192
+  # Путь API и веб-интерфейса — values-<env>.yaml.
+  apiPrefix: ""
   resources:
-    requests:
-      cpu: 500m
-      memory: 2Gi
-    limits:
-      memory: 4Gi
-  # Задаёт Ansible; memoryMiB — лимит VRAM HAMi, 0 — без лимита (WSL2).
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 3Gi }
   gpu:
     enabled: false
     memoryMiB: 0
     layers: 99
     imageTag: server-cuda
-  server:
-    # Open WebUI добавляет к каждому сообщению ~6500 токенов инструкций.
-    contextSize: 16384
-    noMap: false
-    cacheTypeK: f16
-    cacheTypeV: f16
-    nCpuMoe: 0
-    batchSize: 512
-    ubatchSize: 128
-    flashAttention: auto
-
-perplexity:
-  enabled: false
-  image: ghcr.io/ggml-org/llama.cpp:full
-  gpuImage: ghcr.io/ggml-org/llama.cpp:full-cuda
-  # VRAM для Job при HAMi: сумма с llama.gpu.memoryMiB не больше доли узла llms.
-  gpuMemoryMiB: 1024
-  input: >-
-    The quick brown fox jumps over the lazy dog. Language models predict
-    each token from the preceding context. This short sample can be replaced
-    with a representative text corpus using the Helm values.
-  contextSize: 2048
-  batchSize: 512
-  ubatchSize: 128
-
-open-webui:
-  fullnameOverride: open-webui
-  image:
-    repository: ghcr.io/open-webui/open-webui
-    tag: main
-    pullPolicy: IfNotPresent
-  service:
-    port: 8080
-  # Модель обслуживает llama.cpp: встроенные Ollama и Pipelines не нужны.
-  ollama:
-    enabled: false
-  pipelines:
-    enabled: false
-  openaiBaseApiUrl: http://llama.llm.svc.cluster.local:8080/v1
-  openaiApiKey: not-needed
-  # Одна реплика: websocket работает без Redis.
-  websocket:
-    enabled: true
-    manager: ""
-    redis:
-      enabled: false
-  nodeSelector:
-    platform.node: llms
-  resources:
-    requests:
-      cpu: 200m
-      memory: 512Mi
-  persistence:
-    enabled: true
-    storageClass: local
-    size: 2Gi
