@@ -98,6 +98,9 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
 
 ## Важно
 
+- Windows 11: перед первым `up` установите [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+  и WSL2 с Ubuntu (WSL обычно уже есть; проверка — `wsl --version`, установка —
+  `wsl --install Ubuntu` в PowerShell). Команды платформы выполняются в терминале Ubuntu.
 - Первый `up` может остановиться с просьбой выполнить `wsl.exe --shutdown` (WSL:
   `metadata` в `/etc/wsl.conf`, память в `.wslconfig`) или перелогиниться
   (Ubuntu: группа `docker`). После этого повторите `./cluster.sh up`. Hosts
