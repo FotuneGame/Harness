@@ -3,17 +3,20 @@ llama:
     repository: ghcr.io/ggml-org/llama.cpp
     tag: server
   model:
-    repository: bartowski/Qwen2.5-0.5B-Instruct-GGUF
-    name: Qwen2.5-0.5B-Instruct
+    repository: unsloth/Qwen3.5-4B-GGUF
+    name: Qwen3.5-4B
     quantization: Q4_K_M
   storage: 20Gi
-  contextSize: 8192
+  contextSize: 32768
+  thinking: false
   apiPrefix: ""
   resources:
-    requests: { cpu: 500m, memory: 1Gi }
-    limits: { memory: 3Gi }
+    requests: { cpu: "1", memory: 3Gi }
+    limits: { memory: 5Gi }
   gpu:
     enabled: false
     memoryMiB: 0
-    layers: 99
+    # auto — столько слоёв, сколько помещается в свободную VRAM (llama.cpp --fit).
+    layers: auto
+    fitTargetMiB: 256
     imageTag: server-cuda

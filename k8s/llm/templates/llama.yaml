@@ -46,8 +46,19 @@ spec:
             - "8080"
             - --ctx-size
             - {{ $llama.contextSize | quote }}
+            {{- if not $llama.gpu.enabled }}
             - -ngl
-            - {{ $llama.gpu.enabled | ternary $llama.gpu.layers 0 | quote }}
+            - "0"
+            {{- else if ne (toString $llama.gpu.layers) "auto" }}
+            - -ngl
+            - {{ $llama.gpu.layers | quote }}
+            {{- else }}
+            # Число слоёв на GPU llama.cpp подбирает по свободной VRAM (--fit), остальные — на CPU.
+            - --fit-target
+            - {{ $llama.gpu.fitTargetMiB | quote }}
+            {{- end }}
+            - --reasoning
+            - {{ $llama.thinking | ternary "on" "off" | quote }}
             - --metrics
             {{- with $llama.apiPrefix }}
             - --api-prefix
@@ -66,11 +77,15 @@ spec:
               nvidia.com/gpumem: {{ $llama.gpu.memoryMiB }}
               {{- end }}
               {{- end }}
+          # Загрузка модели в память — минуты: до 15 минут без перезапуска.
+          startupProbe:
+            httpGet: { path: "{{ $llama.apiPrefix }}/health", port: http }
+            periodSeconds: 10
+            failureThreshold: 90
           readinessProbe:
             httpGet: { path: "{{ $llama.apiPrefix }}/health", port: http }
           livenessProbe:
             httpGet: { path: "{{ $llama.apiPrefix }}/health", port: http }
-            initialDelaySeconds: 30
             periodSeconds: 20
           volumeMounts:
             - { name: models, mountPath: /models }

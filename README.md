@@ -219,6 +219,6 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
 - GPU: в Ubuntu нужен драйвер NVIDIA (Container Toolkit ставится
   автоматически). Видеокарту делят llama.cpp трёх окружений (HAMi — по трети
   VRAM, WSL2 — time-slicing); если GPU недоступен, llama.cpp работает на CPU.
-- LLM по умолчанию — [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)
-  (GGUF Q4_K_M); требования, адреса и смена модели — [k8s/llm/README.md](k8s/llm/README.md).
+- LLM по умолчанию — [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) (GGUF Q4_K_M);
+  требования, адреса и смена модели — [k8s/llm/README.md](k8s/llm/README.md).
 - Как менять и добавлять сервисы, папки, тома и маршруты — [k8s/README.md](k8s/README.md).
