@@ -24,8 +24,11 @@ spec:
           {{- if .stripPath }}
           - path: {{ $path }}(/|$)(.*)
             pathType: ImplementationSpecific
+          {{- else if eq $path "/" }}
+          - path: /
+            pathType: Prefix
           {{- else }}
-          - path: {{ $path }}
+          - path: {{ $path }}/
             pathType: Prefix
           {{- end }}
             backend:
@@ -33,17 +36,21 @@ spec:
                 name: {{ .service }}
                 port:
                   number: {{ .port }}
-{{- if ne $path "/" }}
+{{- if and (ne $path "/") (not .stripPath) }}
 ---
 # /<env>/<сервис> -> /<env>/<сервис>/: сервисы под путём (llama.cpp) отвечают
 # только со слешем, относительные ссылки их страниц без него не работают.
+# Регулярное выражение с $: иначе путь совпал бы с маршрутом сервиса и
+# ingress-nginx отдал бы редирект на все запросы /<env>/<сервис>/...
+# Временный редирект (302): браузер его не кэширует.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ .service }}-slash
   namespace: {{ .namespace }}
   annotations:
-    nginx.ingress.kubernetes.io/permanent-redirect: https://{{ .host }}{{ $path }}/
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/temporal-redirect: https://{{ .host }}{{ $path }}/
 spec:
   ingressClassName: nginx
   tls:
@@ -53,8 +60,8 @@ spec:
     - host: {{ .host }}
       http:
         paths:
-          - path: {{ $path }}
-            pathType: Exact
+          - path: {{ $path }}$
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: {{ .service }}
