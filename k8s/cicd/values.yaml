@@ -18,7 +18,6 @@ argo-cd:
     resources: { requests: { cpu: 100m, memory: 256Mi } }
   applicationSet:
     resources: { requests: { cpu: 50m, memory: 128Mi } }
-  # Вход только пользователем admin: SSO (Dex) не нужен.
   dex:
     enabled: false
   # Образ Docker Hub — через зеркало узлов (по умолчанию ecr-public.aws.com).
@@ -26,7 +25,6 @@ argo-cd:
     image:
       repository: redis
 
-# Kyverno монтирует папки приложений (k8s/app): нужен только admission controller.
 kyverno:
   global:
     nodeSelector:
@@ -44,7 +42,6 @@ kyverno:
   reportsController:
     enabled: false
 
-# Включается Ansible, если в Vault есть cicd/gitlab-runner.
 gitlab-runner:
   nodeSelector:
     platform.node: core

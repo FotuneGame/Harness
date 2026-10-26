@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { config } from '../config';
 import { Connection, ensure } from './connection';
 
-// Локальная модель llama.cpp (OpenAI-совместимый API).
 @Injectable()
 export class LlmService implements Connection {
   readonly name = 'llm';

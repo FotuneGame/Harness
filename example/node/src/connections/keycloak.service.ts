@@ -3,7 +3,6 @@ import { createRemoteJWKSet, JWTPayload, jwtVerify } from 'jose';
 import { config } from '../config';
 import { Connection, ensure } from './connection';
 
-// Проверка токенов Keycloak: подпись по ключам realm (JWKS) и издатель.
 @Injectable()
 export class KeycloakService implements Connection {
   readonly name = 'keycloak';

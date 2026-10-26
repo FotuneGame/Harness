@@ -1,6 +1,3 @@
-# Поды приложений в namespace app-<env> (узел apps) получают папку
-# volumes/app/<env>/<имя> в /app-data. Имя — первая метка из nameLabels,
-# иначе defaultName.
 appData:
   claim: app-data
   size: 20Gi

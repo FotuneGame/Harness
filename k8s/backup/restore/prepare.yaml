@@ -1,6 +1,4 @@
-# ./cluster.sh restore: текущие данные PVC переносятся в ${KEEP} в том же томе
-# (откат восстановления — вернуть их обратно). Метка k8up.io/* — политика
-# Kyverno /app-data такие поды не меняет.
+# Метка k8up.io/* — политика Kyverno /app-data такие поды не меняет.
 apiVersion: v1
 kind: Pod
 metadata:

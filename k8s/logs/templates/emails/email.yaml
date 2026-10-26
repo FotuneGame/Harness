@@ -1,7 +1,4 @@
-# Шаблоны писем Alertmanager: тема «ТРЕВОГА/РЕШЕНО: имя (namespace)», по каждой
-# тревоге — что случилось, где, важность, время (UTC) и ссылки. Подключены в
-# values.yaml (alertmanagerSpec.configMaps, config.templates). Текст — сырая строка
-# Helm в обратных кавычках: синтаксис Alertmanager Helm не разбирает.
+# Текст — сырая строка Helm в обратных кавычках: синтаксис Alertmanager Helm не разбирает.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -30,7 +27,7 @@ data:
   </td></tr>
 </table>
 {{ end }}
-<p><a href="{{ .ExternalURL }}">Все тревоги</a> · <a href="https://grafana.local">Grafana</a></p>
+<p><a href="https://grafana.local">Grafana</a></p>
 </div>
 {{ end }}
 ` | indent 4 }}

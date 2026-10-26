@@ -1,8 +1,3 @@
-# check, test → build (образ в registry.local) → deploy (imageTag в
-# deploy/values-<env>.yaml; Argo CD разворачивает изменения из Git).
-# dev — автоматически из основной ветки, stage — вручную оттуда же,
-# prod — вручную из тега. Переменная CI/CD GITOPS_TOKEN — project access
-# token с ролью Maintainer и правом write_repository.
 stages: [check, build, deploy]
 
 .node:
@@ -52,8 +47,7 @@ build:
     - git diff --quiet && exit 0
     - 'git -c user.name="GitLab CI" -c user.email="ci@gitlab.local" commit -am "deploy $DEPLOY_ENV: $CI_COMMIT_SHORT_SHA"'
     # origin — внутренний адрес GitLab (clone_url Runner): без TLS *.local.
-    # ci.skip пропускает pipeline только этого push: в отличие от [skip ci]
-    # в сообщении, тег на таком коммите запускает pipeline.
+    # ci.skip пропускает только этот push: тег на таком коммите запускает pipeline.
     - git push -o ci.skip "$(git remote get-url origin | sed "s#//[^@]*@#//oauth2:$GITOPS_TOKEN@#")" "$CI_DEFAULT_BRANCH"
 
 deploy-dev:

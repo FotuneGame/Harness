@@ -11,8 +11,6 @@ import { RedisService } from '../src/connections/redis.service';
 import { S3Service } from '../src/connections/s3.service';
 import { HealthController } from '../src/health/health.controller';
 
-// Пример теста: контроллер работает без настоящих сервисов — они заменены
-// заглушками, PostgreSQL отвечает так, как задано в тесте.
 describe('HealthController', () => {
   const query = jest.fn();
   const disabled = (name: string) => ({ name, enabled: false });

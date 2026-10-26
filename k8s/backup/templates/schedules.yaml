@@ -6,7 +6,6 @@ metadata:
   name: backup
   namespace: {{ . | quote }}
 spec:
-  # Репозиторий restic: bucket volumes, путь каталога данных (db-dev -> volumes/db/dev).
   backend:
     s3:
       bucket: volumes/{{ replace "-" "/" . }}

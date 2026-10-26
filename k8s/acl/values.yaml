@@ -1,6 +1,3 @@
-# Keycloak окружения (namespace acl-<env>, узел core). База — PostgreSQL
-# окружения (db-<env>, база keycloak); вход администратора — Vault acl/<env>/keycloak,
-# логин передаёт Ansible. TLS завершается на ingress, Keycloak работает по HTTP.
 global:
   imageRegistry: docker.io
   security:
@@ -13,7 +10,6 @@ keycloak:
   service:
     ports:
       http: 8080
-  # Путь веб-интерфейса (со слешем в конце) — values-<env>.yaml.
   httpRelativePath: /
   proxyHeaders: xforwarded
   production: false

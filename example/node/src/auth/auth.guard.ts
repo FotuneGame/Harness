@@ -10,8 +10,7 @@ import { KeycloakService } from '../connections/keycloak.service';
 
 export type AuthRequest = Request & { user: JWTPayload };
 
-// Пропускает запросы с действительным токеном Keycloak:
-// заголовок Authorization: Bearer <access token>. Данные токена — request.user.
+// Заголовок Authorization: Bearer <access token>, данные токена — request.user.
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(private readonly keycloak: KeycloakService) {}

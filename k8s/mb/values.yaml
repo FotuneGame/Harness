@@ -1,7 +1,3 @@
-# Kafka окружения (namespace mb-<env>, узел core): KRaft, один узел совмещает
-# роли controller и broker. Без TLS и SASL: доступна только своему окружению.
-# ID кластера chart создаёт сам (Secret kafka-kraft); на уже размеченном диске
-# Kafka берёт его из meta.properties.
 global:
   imageRegistry: docker.io
   security:
@@ -38,7 +34,6 @@ kafka:
   broker:
     replicaCount: 0
 
-# Путь веб-интерфейса — SERVER_SERVLET_CONTEXT_PATH в values-<env>.yaml.
 kafka-ui:
   fullnameOverride: kafka-ui
   envs:

@@ -51,13 +51,11 @@ export class HealthController {
     ];
   }
 
-  // Проба Kubernetes: процесс отвечает.
   @Get('live')
   live() {
     return { status: 'ok' };
   }
 
-  // Состояние всех подключений: ok, disabled или текст ошибки.
   @Get()
   async check() {
     const services: Record<string, string> = {};

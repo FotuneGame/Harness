@@ -1,4 +1,3 @@
-# Веб-интерфейсы: https://platform.local/stage/<сервис>.
 redisinsight:
   proxyPath: /stage/redis
 

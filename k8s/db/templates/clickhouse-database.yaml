@@ -1,6 +1,5 @@
 {{- if .Values.allServices }}
-# База ClickHouse с именем логина (Vault db/<env>/clickhouse): chart создаёт только
-# пользователя.
+# Chart ClickHouse создаёт только пользователя, базу с именем логина — эта Job.
 apiVersion: batch/v1
 kind: Job
 metadata:

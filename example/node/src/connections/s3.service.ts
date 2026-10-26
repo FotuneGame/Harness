@@ -4,7 +4,6 @@ import { Readable } from 'node:stream';
 import { config } from '../config';
 import { Connection, ensure } from './connection';
 
-// Файлы в MinIO (S3): bucket config.s3.bucket, доступ только к нему.
 @Injectable()
 export class S3Service implements Connection {
   readonly name = 's3';

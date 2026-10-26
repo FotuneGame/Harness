@@ -1,6 +1,4 @@
-// Настройки из переменных окружения. В кластере их задаёт deploy/ (пароли —
-// Secret из Vault), локально — файл .env (scripts/dev.sh). Пустой адрес сервиса
-// выключает его: приложение работает без него, /health показывает "disabled".
+// Пустой адрес сервиса выключает его, /health показывает "disabled".
 try {
   process.loadEnvFile();
 } catch {
@@ -10,10 +8,8 @@ try {
 const env = (name: string, fallback = '') => process.env[name] || fallback;
 
 export const config = {
-  // Имя приложения (Argo CD Application): группы Kafka, трейсы.
   name: env('APP_NAME', 'node-example'),
   port: Number(env('PORT', '3000')),
-  // Постоянная папка приложения: в кластере volumes/app/<env>/<приложение>.
   appDataPath: env('APP_DATA_PATH', './app-data'),
 
   postgres: {

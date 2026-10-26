@@ -4,7 +4,6 @@ description: Базы данных окружения (db-<env>) с веб-ин�
 type: application
 version: 0.3.0
 dependencies:
-  # Charts Bitnami публикуются только в OCI-реестре Docker Hub.
   - name: postgresql
     version: 18.12.4
     repository: oci://registry-1.docker.io/bitnamicharts

@@ -1,38 +1,35 @@
-# Terraform: узлы кластера
+# terraform: узлы кластера
 
-Создаёт minikube (драйвер docker) из трёх узлов и задаёт им ресурсы, метки
-`platform.node` и taint. Запускается из `./cluster.sh up` и `delete`; state — в
-`volumes/terraform/terraform.tfstate`.
+## Состав
 
-| Файл | Что внутри |
+| Файл | Содержимое |
 |---|---|
-| `variables.tf` | Сервер (`host`), узлы (`nodes`), GPU, зеркала Docker Hub, версия Kubernetes |
-| `main.tf` | `terraform_data.cluster` — `minikube start`, `terraform_data.node` — ресурсы, метки, taint |
-| `outputs.tf` | `nodes`, `allocated`, `ansible` (параметры для Ansible) |
-| `.terraformrc` | Зеркало провайдеров (`terraform-mirror.yandexcloud.net`) |
+| `variables.tf` | Ресурсы сервера и узлов, GPU, зеркала Docker Hub, версия Kubernetes |
+| `main.tf` | Создание minikube, ресурсы, метки и taint узлов |
+| `outputs.tf` | Параметры для Ansible |
+| `.terraformrc` | Зеркало провайдеров |
+| State | `volumes/terraform/terraform.tfstate` |
 
-| Узел | Метка `platform.node` | Назначение |
-|---|---|---|
-| `minikube` | `core` | Все сервисы платформы и окружений |
-| `minikube-m02` | `llms` | llama.cpp, GPU |
-| `minikube-m03` | `apps` | Свои приложения, taint `workload=apps:NoSchedule` |
+## Узлы
+
+| Узел | `platform.node` | CPU | RAM | Диск | VRAM | Назначение |
+|---|---|---|---|---|---|---|
+| `minikube` | `core` | 6 | 20 ГБ | 200 ГБ | 0 | Сервисы платформы и окружений |
+| `minikube-m02` | `llms` | 4 | 16 ГБ | 200 ГБ | 4096 МБ | llama.cpp |
+| `minikube-m03` | `apps` | 2 | 4 ГБ | 50 ГБ | 0 | Свои приложения, taint `workload=apps:NoSchedule` |
 
 ## Команды
 
 Из корня репозитория.
 
-| Действие | Команда |
-|---|---|
-| Применить (вместе с Ansible) | `./cluster.sh up` |
-| Что изменится | `TF_CLI_CONFIG_FILE=terraform/.terraformrc terraform -chdir=terraform plan` |
-| Узлы и ресурсы | `terraform -chdir=terraform output nodes` |
-| Проверка | `terraform -chdir=terraform fmt -check && terraform -chdir=terraform validate` |
-| Удалить кластер | `./cluster.sh delete` |
+- Для создания и обновления узлов: `./cluster.sh up`
+- Для просмотра изменений: `TF_CLI_CONFIG_FILE=terraform/.terraformrc terraform -chdir=terraform plan`
+- Для просмотра узлов и ресурсов: `terraform -chdir=terraform output nodes`
+- Для проверки файлов: `terraform -chdir=terraform fmt -check && terraform -chdir=terraform validate`
+- Для удаления кластера: `./cluster.sh delete`
 
 ## Важно
 
-- Ресурсы задаются только в `variables.tf`: сумма узлов не больше `host` (RAM —
-  с запасом для ОС, VRAM — не больше 4096 МиБ).
-- Изменение числа узлов, ресурсов `core`, GPU, зеркал или версии Kubernetes
-  пересоздаёт кластер (данные в `volumes/` сохраняются); ресурсы `llms`/`apps`
-  и VRAM меняются без пересоздания.
+- Ресурсы задаются только в `variables.tf`, сумма узлов не больше ресурсов сервера.
+- Изменение числа узлов, ресурсов `core`, GPU, зеркал или версии Kubernetes пересоздаёт кластер, данные в `volumes/` сохраняются.
+- Ресурсы `llms`, `apps` и VRAM меняются без пересоздания.

@@ -1,9 +1,4 @@
-# Базы данных окружения (namespace db-<env>, узел core). Пароли — Secret из
-# Vault db/<env>/*, логины передаёт Ansible. GitLab работает на PostgreSQL и
-# Redis окружения prod (values-prod.yaml). Образы Bitnami — в bitnamilegacy/
-# (allowInsecureImages).
-# false — только PostgreSQL и Redis (db-prod для GitLab, пока окружение prod не
-# развёрнуто): ClickHouse, Elasticsearch, Kibana, pgAdmin и RedisInsight не ставятся.
+# false — только PostgreSQL и Redis (db-prod для GitLab без окружения prod).
 allServices: true
 
 global:
@@ -11,9 +6,6 @@ global:
   security:
     allowInsecureImages: true
 
-# Владелец базы приложений — логин из Vault db/<env>/postgresql, суперпользователь
-# postgres — ключ postgres-password там же. Базы сервисов из других namespace —
-# serviceDatabases.
 postgresql:
   fullnameOverride: postgresql
   auth:
@@ -36,7 +28,6 @@ postgresql:
       size: 5Gi
     resources:
       requests: { cpu: 50m, memory: 128Mi }
-  # Метрики для Prometheus (ServiceMonitor) — дашборд Platform overview в Grafana.
   metrics:
     enabled: true
     serviceMonitor:
@@ -66,19 +57,14 @@ redis:
   volumePermissions:
     enabled: true
 
-# Базы сервисов из других namespace (база: Secret с логином и паролем роли из
-# Vault, расширения PostgreSQL). Роль и база создаются, а пароль роли берётся из
-# Vault при каждой установке (templates/service-databases.yaml).
 serviceDatabases:
   image: docker.io/bitnami/postgresql:latest
   databases:
     keycloak: { secret: keycloak-db-credentials }
 
-# База ClickHouse с именем логина (templates/clickhouse-database.yaml).
 clickhouseDatabase:
   image: curlimages/curl:8.12.1
 
-# Официального chart нет (templates/redisinsight.yaml). proxyPath — путь веб-интерфейса.
 redisinsight:
   image: redis/redisinsight:latest
   proxyPath: ""
@@ -120,7 +106,6 @@ elasticsearch:
         allow_mmap: false
   sysctlImage:
     enabled: false
-  # Один узел — и master, и data.
   master:
     masterOnly: false
     replicaCount: 1
@@ -152,7 +137,6 @@ kibana:
   elasticsearch:
     hosts: [elasticsearch]
     port: "9200"
-  # Путь веб-интерфейса — configuration.server.basePath в values-<env>.yaml.
   configuration:
     server:
       rewriteBasePath: true
@@ -177,7 +161,6 @@ pgadmin4:
   existingSecret: pgadmin-credentials
   secretKeys:
     pgadminPasswordKey: password
-  # Путь веб-интерфейса — env.contextPath в values-<env>.yaml.
   networkPolicy:
     enabled: false
   serverDefinitions:

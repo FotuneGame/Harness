@@ -11,7 +11,6 @@ spec:
     requests:
       storage: {{ $data.size }}
 ---
-# Поды приложений получают volumes/app/<env>/<имя> в /app-data.
 apiVersion: policies.kyverno.io/v1
 kind: MutatingPolicy
 metadata:

@@ -5,7 +5,6 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-// Таблица note в PostgreSQL.
 @Entity()
 export class Note {
   @PrimaryGeneratedColumn()
@@ -17,7 +16,6 @@ export class Note {
   @Column('text')
   text: string;
 
-  // Ключ прикреплённого файла в S3.
   @Column({ type: 'varchar', nullable: true })
   file: string | null;
 

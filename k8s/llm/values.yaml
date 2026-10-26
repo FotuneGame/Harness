@@ -1,5 +1,3 @@
-# Официального chart llama.cpp нет (templates/llama.yaml). Узел llms, модель
-# скачивается в volumes/llm/<env>/llama. GPU и долю VRAM задаёт Ansible.
 llama:
   image:
     repository: ghcr.io/ggml-org/llama.cpp
@@ -10,7 +8,6 @@ llama:
     quantization: Q4_K_M
   storage: 20Gi
   contextSize: 8192
-  # Путь API и веб-интерфейса — values-<env>.yaml.
   apiPrefix: ""
   resources:
     requests: { cpu: 500m, memory: 1Gi }

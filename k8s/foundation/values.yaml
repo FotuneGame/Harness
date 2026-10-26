@@ -1,15 +1,9 @@
-# Общие namespace (k8s/<папка>): один экземпляр на все окружения.
 namespaces: [proxy, vcs, cicd, secret, backup, logs]
 
-# Окружения: namespace <папка>-<env> с меткой platform.env. К их подам
-# подключаются только поды того же окружения и namespace из allowNamespaces
-# (NetworkPolicy, CNI Calico).
 environments:
   names: [dev, stage, prod]
   allowNamespaces: [logs, proxy]
-  # Namespace окружений, которыми пользуются общие сервисы: к ним разрешён доступ
-  # из namespaces, а ./cluster.sh stop и delete с флагом окружения не трогают
-  # services (метка app.kubernetes.io/name; аннотация platform/shared-services).
+  # Доступ из namespaces к services; stop и delete окружения их не трогают.
   usedBy:
     db-prod: { namespaces: [vcs], services: [postgresql, redis] }
   # Папки окружений:

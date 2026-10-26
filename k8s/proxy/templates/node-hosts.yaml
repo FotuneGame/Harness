@@ -4,7 +4,6 @@
 {{- $hosts = append $hosts .host }}
 {{- end }}
 {{- $service := printf "%s-controller.%s.svc.cluster.local" (index .Values "ingress-nginx" "fullnameOverride") .Release.Namespace }}
-# Имена *.local и CA для Docker узлов (см. nodeHosts в values.yaml).
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:

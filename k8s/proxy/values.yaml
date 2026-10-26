@@ -1,7 +1,3 @@
-# Маршруты HTTPS: host и path -> Service в namespace. Веб-интерфейсы окружений —
-# https://platform.local/<env>/<сервис> (сервис сам работает под этим путём;
-# stripPath — путь убирается перед передачей сервису). По этому же списку
-# Ansible прописывает имена в hosts и выпускает TLS-сертификат.
 routes:
   - { host: platform.local, path: /dev/pgadmin, namespace: db-dev, service: pgadmin, port: 80 }
   - { host: platform.local, path: /dev/redis, namespace: db-dev, service: redisinsight, port: 5540 }
@@ -27,10 +23,8 @@ routes:
   - { host: vault.local, namespace: secret, service: vault, port: 8200 }
   - { host: grafana.local, namespace: logs, service: logs-grafana, port: 80 }
   - { host: prometheus.local, namespace: logs, service: logs-prometheus, port: 9090 }
-  - { host: alert.local, namespace: logs, service: logs-alertmanager, port: 9093 }
   - { host: jaeger.local, namespace: logs, service: jaeger, port: 16686 }
   - { host: argocd.local, namespace: cicd, service: argocd-server, port: 80 }
-  - { host: backups.local, namespace: backup, service: minio-console, port: 9090 }
   - host: registry.local
     namespace: vcs
     service: registry
@@ -57,9 +51,8 @@ tlsSecret: local-wildcard-tls
 # ConfigMap с CA *.local (ключ ca.crt) создаёт Ansible в namespace proxy и cicd.
 caConfigMap: local-ca
 
-# Docker узлов не использует CoreDNS: DaemonSet записывает имена *.local в
-# /etc/hosts узла и CA в /etc/docker/certs.d (для образов registry.local).
-# Docker пересоздаёт /etc/hosts при запуске — проверка каждые interval секунд.
+# Docker узлов не использует CoreDNS; /etc/hosts он пересоздаёт при запуске —
+# проверка каждые interval секунд.
 nodeHosts:
   enabled: true
   image: alpine:3.22

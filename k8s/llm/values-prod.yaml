@@ -1,3 +1,2 @@
-# Веб-интерфейс и API: https://platform.local/prod/llama.
 llama:
   apiPrefix: /prod/llama

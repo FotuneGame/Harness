@@ -1,7 +1,15 @@
 # llm: llama.cpp окружения
 
-Своя llama.cpp в каждом окружении (namespace `llm-<env>`, узел `llms`): OpenAI-
-совместимый API и веб-интерфейс. Официального chart нет — `templates/llama.yaml`.
+## Состав
+
+| Параметр | Значение |
+|---|---|
+| Релизы | `llm-dev`, `llm-stage`, `llm-prod` |
+| Namespace | `llm-<env>` |
+| Узел | `llms` |
+| Chart | свой (`templates/llama.yaml`) |
+| Образ | `ghcr.io/ggml-org/llama.cpp:server`, с GPU — `:server-cuda` |
+| Данные | `volumes/llm/<env>/llama` |
 
 ## Модель по умолчанию
 
@@ -11,42 +19,34 @@
 | Файл | [bartowski/Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF), `Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` (~0,4 ГБ) |
 | Имя в API (`model`) | `Qwen2.5-0.5B-Instruct` |
 | Контекст | 8192 токена |
-| Образ | `ghcr.io/ggml-org/llama.cpp:server-cuda` (без GPU — `:server`) |
 
-Модель скачивается init-контейнером при первом запуске в `volumes/llm/<env>/llama`.
+## Ресурсы
 
-## Технические требования
-
-| Ресурс | На окружение | Всего (dev, stage, prod) |
+| Ресурс | На окружение | Узел `llms` |
 |---|---|---|
-| CPU | запрос 0,5 ядра | узел `llms`: 4 ядра |
-| RAM | запрос 1 ГиБ, лимит 3 ГиБ | узел `llms`: 16 ГиБ |
-| Диск | модель ~0,4 ГБ, том 20 ГиБ | ~1,2 ГБ |
-| VRAM (NVIDIA) | Ubuntu (HAMi) — треть доли узла, ~1,3 ГиБ; WSL2 — time-slicing без лимита | 4 ГиБ (GTX 1650) |
-| Сеть | доступ к `huggingface.co` при первом запуске | — |
-
-Без GPU llama.cpp работает на CPU (медленнее). Доля VRAM узла — `nodes.llms.vram_mib`
-в `terraform/variables.tf`.
+| CPU | 0,5 ядра (запрос) | 4 ядра |
+| RAM | 1 ГиБ запрос, 3 ГиБ лимит | 16 ГиБ |
+| Диск | ~0,4 ГБ модель, том 20 ГиБ | 200 ГБ |
+| VRAM | ~1,3 ГиБ (Ubuntu), без лимита (WSL2) | 4 ГиБ |
 
 ## Адреса
 
 | Откуда | Адрес |
 |---|---|
 | Браузер | `https://platform.local/<env>/llama/` |
-| Поды окружения | `http://llama.llm-<env>.svc.cluster.local:8080/<env>/llama` (API: `.../v1`) |
+| Поды окружения | `http://llama.llm-<env>.svc.cluster.local:8080/<env>/llama` |
+| OpenAI API | `http://llama.llm-<env>.svc.cluster.local:8080/<env>/llama/v1` |
 
 ## Команды
 
-| Действие | Команда |
-|---|---|
-| Состояние | `kubectl get pods -n llm-dev` |
-| Журнал | `kubectl logs -n llm-dev deploy/llama` |
-| Проброс веб-интерфейса | `kubectl port-forward -n llm-dev svc/llama 8080:8080` → http://localhost:8080/dev/llama/ |
-| Проверка API | `curl http://localhost:8080/dev/llama/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"Привет"}]}'` |
+- Для установки окружения: `./cluster.sh up --dev`
+- Для просмотра журнала: `kubectl logs -n llm-dev deploy/llama`
+- Для проброса веб-интерфейса на http://localhost:81/dev/llama/: `kubectl port-forward -n llm-dev svc/llama 81:8080`
+- Для проверки API после проброса: `curl http://localhost:81/dev/llama/v1/chat/completions -H 'Content-Type: application/json' -d '{"messages":[{"role":"user","content":"Привет"}]}'`
 
-## Другая модель
+## Важно
 
-В `values.yaml` — `llama.model`: `repository` (репозиторий GGUF на Hugging Face),
-`name` и `quantization` (файл `<name>-<quantization>.gguf`), при необходимости
-`storage`, `contextSize`, `resources`; затем `./cluster.sh up`. Модель должна
-помещаться в RAM лимита и долю VRAM.
+- Модель скачивается при первом запуске, нужен доступ к `huggingface.co`.
+- Без GPU llama.cpp работает на CPU, медленнее.
+- Другая модель: `llama.model` в `values.yaml` (`repository`, `name`, `quantization`), затем `./cluster.sh up`.
+- Модель должна помещаться в лимит RAM и долю VRAM.

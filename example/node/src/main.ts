@@ -10,7 +10,6 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableShutdownHooks();
 
-  // Документация и проверка методов API в браузере: /docs.
   const document = SwaggerModule.createDocument(
     app,
     new DocumentBuilder().setTitle(config.name).addBearerAuth().build(),

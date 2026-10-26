@@ -5,7 +5,6 @@ import { AuthGuard, type AuthRequest } from './auth.guard';
 @ApiTags('auth')
 @Controller()
 export class AuthController {
-  // Пример защищённого метода: данные пользователя из токена Keycloak.
   @Get('me')
   @UseGuards(AuthGuard)
   @ApiBearerAuth()

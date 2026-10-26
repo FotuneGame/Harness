@@ -20,8 +20,6 @@ const CACHE_KEY = 'notes:list';
 const TOPIC = 'notes.created';
 const INDEX = 'notes';
 
-// Заметки: PostgreSQL — хранение, Redis — кеш списка, Elasticsearch — поиск,
-// Kafka → ClickHouse — статистика, S3 — файлы, LLM — краткое содержание.
 // Выключенные сервисы пропускаются.
 @Injectable()
 export class NotesService implements OnApplicationBootstrap {
@@ -35,7 +33,6 @@ export class NotesService implements OnApplicationBootstrap {
     private readonly llm: LlmService,
   ) {}
 
-  // События о новых заметках из Kafka записываются в ClickHouse.
   async onApplicationBootstrap() {
     if (!this.kafka.enabled || !this.clickhouse.enabled) return;
     await this.clickhouse.client.command({

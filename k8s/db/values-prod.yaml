@@ -1,4 +1,3 @@
-# Веб-интерфейсы: https://platform.local/prod/<сервис>.
 redisinsight:
   proxyPath: /prod/redis
 
@@ -11,8 +10,6 @@ pgadmin4:
   env:
     contextPath: /prod/pgadmin
 
-# GitLab (namespace vcs) работает на PostgreSQL и Redis prod: своя роль и база
-# (Vault db/prod/gitlab), в Redis — база 1 (k8s/vcs).
 serviceDatabases:
   databases:
     gitlabhq_production:

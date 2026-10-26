@@ -1,6 +1,5 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 
-// Подключение, которое проверяет /health.
 export interface Connection {
   name: string;
   enabled: boolean;

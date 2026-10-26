@@ -1,5 +1,3 @@
-# Окружение (dev, stage, prod) — stage в values-<env>.yaml; тег образа imageTag
-# там же, его записывает CI (deploy-<env>).
 image: registry.local/main/node
 imagePullSecret: gitlab-registry
 replicas: 1
@@ -7,8 +5,7 @@ resources:
   requests: { cpu: 100m, memory: 256Mi }
   limits: { memory: 512Mi }
 
-# Переменные приложения (src/config.ts); {{ .Values.stage }} — окружение.
-# Сервисы окружения — в namespace <папка>-<env>.
+# {{ .Values.stage }} — окружение (values-<env>.yaml).
 env:
   PORT: "3000"
   POSTGRES_HOST: postgresql.db-{{ .Values.stage }}.svc.cluster.local
@@ -22,7 +19,6 @@ env:
   OTLP_URL: http://jaeger.logs.svc.cluster.local:4318
   APP_DATA_PATH: /app-data
 
-# Логины и пароли — Secret из Vault db/<env>/*, которые платформа создаёт в app-<env>.
 secretEnv:
   POSTGRES_USER: { secret: postgresql-credentials, key: username }
   POSTGRES_DB: { secret: postgresql-credentials, key: username }

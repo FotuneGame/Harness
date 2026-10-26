@@ -7,7 +7,6 @@ import { LlmService } from './llm.service';
 import { RedisService } from './redis.service';
 import { S3Service } from './s3.service';
 
-// Подключения доступны во всех модулях через конструктор.
 const connections = [
   RedisService,
   ClickHouseService,

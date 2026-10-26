@@ -1,4 +1,3 @@
-# Веб-интерфейсы: https://platform.local/dev/<сервис>.
 redisinsight:
   proxyPath: /dev/redis
 

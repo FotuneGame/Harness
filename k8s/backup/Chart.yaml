@@ -7,8 +7,7 @@ dependencies:
   - name: k8up
     version: 4.10.0
     repository: https://k8up-io.github.io/k8up
-  # Официальные образы MinIO больше не публикуются (quay.io и Docker Hub
-  # отвечают 401): chart Bitnami с образами bitnamilegacy/.
+  # Официальные образы MinIO больше не публикуются: chart Bitnami с bitnamilegacy/.
   - name: minio
     version: 17.0.21
     repository: oci://registry-1.docker.io/bitnamicharts

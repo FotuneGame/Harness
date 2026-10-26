@@ -3,7 +3,9 @@
 Minikube из трёх узлов. Terraform создаёт узлы, Ansible устанавливает пакеты,
 настраивает сервер и разворачивает Helm charts (`k8s/<папка>`). Папки `db`, `mb`,
 `llm`, `acl`, `app` разделены на окружения dev, stage, prod, папки `vcs`, `cicd`,
-`proxy`, `secret`, `logs`, `backup` общие для всех окружений.
+`proxy`, `secret`, `logs`, `backup` общие для всех окружений. Пошаговая
+инструкция со скриншотами — [Руководство пользователя.docx](Руководство%20пользователя.docx),
+описание charts — [k8s/README.md](k8s/README.md).
 
 ## Сервер
 
@@ -35,8 +37,8 @@ Minikube из трёх узлов. Terraform создаёт узлы, Ansible у
 | `vcs` | core | GitLab, Container Registry, MinIO (объекты GitLab) | `gitlab-webservice-default.vcs:8181`, `registry.vcs:5000`, `minio.vcs:9000` | https://gitlab.local, https://registry.local |
 | `cicd` | core | Argo CD, GitLab Runner, Kyverno | `argocd-server.cicd` | https://argocd.local |
 | `secret` | core | Vault, Vault Secrets Operator | `vault.secret:8200` | https://vault.local |
-| `logs` | core | Prometheus, Alertmanager, Grafana, Jaeger | `logs-prometheus.logs:9090`, `jaeger.logs:4317/4318` (OTLP) | https://prometheus.local, https://alert.local, https://grafana.local, https://jaeger.local |
-| `backup` | core | K8up, MinIO (резервные копии) | `minio.backup:9000` | https://backups.local |
+| `logs` | core | Prometheus, Alertmanager, Grafana, Jaeger | `logs-prometheus.logs:9090`, `jaeger.logs:4317/4318` (OTLP) | https://prometheus.local, https://grafana.local, https://jaeger.local |
+| `backup` | core | K8up, MinIO (резервные копии) | `minio.backup:9000` | — |
 | `db-<env>` | core | PostgreSQL, Redis, ClickHouse, Elasticsearch (в `db-prod` — ещё база `gitlabhq_production` и Redis-база 1 для GitLab) | `postgresql.db-<env>:5432`, `redis-master.db-<env>:6379`, `clickhouse.db-<env>:8123`, `elasticsearch.db-<env>:9200` | `/<env>/pgadmin`, `/<env>/redis`, `/<env>/clickhouse/play`, `/<env>/kibana` |
 | `mb-<env>` | core | Kafka | `kafka.mb-<env>:9092` | `/<env>/kafka` |
 | `acl-<env>` | core | Keycloak | `keycloak.acl-<env>:8080/<env>/keycloak` | `/<env>/keycloak` |
@@ -151,7 +153,7 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
   kubectl exec -n logs alertmanager-logs-alertmanager-0 -c alertmanager -- amtool alert add TestAlert severity=warning --annotation=summary="Проверка" --alertmanager.url=http://localhost:9093
   ```
 
-  Если письма нет, на https://alert.local появится тревога
+  Если письма нет, в Grafana появится тревога
   `AlertmanagerFailedToSendAlerts`, причина — в журнале:
   `kubectl logs -n logs alertmanager-logs-alertmanager-0 -c alertmanager --tail=20`.
 
@@ -170,7 +172,7 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
     docker-in-docker не работает, задачи запускаются без привилегий.
 - HTTPS: без доверия к `volumes/proxy/tls/ca.crt` (команды выше) браузер
   показывает предупреждение о сертификате. CA действует только для имён `*.local`.
-- `ports open 0.0.0.0` открывает сервисы в сеть; Prometheus, Alertmanager,
+- `ports open 0.0.0.0` открывает сервисы в сеть; Prometheus,
   Jaeger, Kafka UI, Kibana, RedisInsight и llama.cpp работают без авторизации.
 - Данные хранятся в `volumes/` (в Git только `.gitkeep`), там же state
   Terraform (`volumes/terraform`). Удаляйте каталог только целиком: пароли в

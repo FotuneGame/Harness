@@ -1,7 +1,3 @@
-# Метрики баз (PostgreSQL, Redis, ClickHouse) — встроенные экспортеры charts
-# Bitnami в k8s/db (metrics.enabled), Prometheus находит их по ServiceMonitor.
-# Дашборды Grafana: стандартные kube-prometheus-stack (кластер, узлы, namespace,
-# поды) и templates/dashboards/ (ConfigMap с меткой grafana_dashboard).
 kube-prometheus-stack:
   fullnameOverride: logs
   crds:
@@ -38,7 +34,6 @@ kube-prometheus-stack:
         group_interval: 5m
         repeat_interval: 4h
         receiver: email
-      # Шаблоны писем — ConfigMap из templates/emails/ (alertmanagerSpec.configMaps).
       templates: ["/etc/alertmanager/configmaps/alertmanager-email-templates/*.tmpl"]
       receivers:
         # Служебный алерт Watchdog по умолчанию направляется в receiver "null".
@@ -52,8 +47,6 @@ kube-prometheus-stack:
                 Subject: '{{ template "email.subject" . }}'
               html: '{{ template "email.html" . }}'
     alertmanagerSpec:
-      # Адрес в ссылках писем.
-      externalUrl: https://alert.local
       nodeSelector:
         platform.node: core
       configMaps:
@@ -101,14 +94,12 @@ kube-prometheus-stack:
       dashboards:
         enabled: true
         label: grafana_dashboard
-    # Стартовая страница — дашборд Platform overview (templates/dashboards/).
     grafana.ini:
       dashboards:
         default_home_dashboard_path: /tmp/dashboards/platform-overview.json
 
   prometheus:
     prometheusSpec:
-      # Адрес ссылки «график в Prometheus» в письмах.
       externalUrl: https://prometheus.local
       nodeSelector:
         platform.node: core
@@ -147,7 +138,6 @@ kube-prometheus-stack:
       resource: true
       resourcePath: /metrics/resource
 
-  # Дашборды node-exporter только для Linux.
   nodeExporter:
     operatingSystems:
       aix:
@@ -230,7 +220,6 @@ kube-prometheus-stack:
                 summary: Redis memory usage is high
                 description: Redis in {{ $labels.namespace }} is using more than 85% of its configured memory limit.
 
-# Трейсы принимаются по OTLP (4317 gRPC, 4318 HTTP) и хранятся в памяти.
 jaeger:
   fullnameOverride: jaeger
   nodeSelector:

@@ -1,6 +1,5 @@
-# Дашборд Grafana «Platform overview»: Grafana подхватывает ConfigMap с меткой
-# grafana_dashboard. Подписи рядов — displayName ${__field.labels.<метка>}:
-# двойные фигурные скобки legendFormat разобрал бы Helm.
+# Подписи рядов — displayName ${__field.labels.<метка>}: двойные фигурные скобки
+# legendFormat разобрал бы Helm.
 apiVersion: v1
 kind: ConfigMap
 metadata:

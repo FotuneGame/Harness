@@ -1,5 +1,3 @@
-# Только узлы с меткой platform.gpu=on. Доли VRAM для HAMi передаёт Ansible
-# (hami.devicePlugin.nodeConfiguration.config).
 hami:
   enabled: true
   fullnameOverride: hami
@@ -12,7 +10,6 @@ hami:
         repository: kube-scheduler
     service:
       type: ClusterIP
-    # Официальный образ вместо личного репозитория Docker Hub.
     patch:
       imageNew:
         registry: registry.k8s.io
@@ -37,7 +34,6 @@ nvidia-device-plugin:
     platform.gpu: "on"
   # По умолчанию chart требует метки Node Feature Discovery, которых в minikube нет.
   affinity: null
-  # Видеокарту делят llama.cpp трёх окружений (dev, stage, prod).
   config:
     default: shared
     map:
