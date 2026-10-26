@@ -46,6 +46,7 @@
 
 ## Важно
 
+- Метрики llama.cpp (`/<env>/llama/metrics`) собирает Prometheus, графики — в дашборде Platform overview.
 - Модель скачивается при первом запуске, нужен доступ к `huggingface.co`.
 - Без GPU llama.cpp работает на CPU, медленнее.
 - Другая модель: `llama.model` в `values.yaml` (`repository`, `name`, `quantization`), затем `./cluster.sh up`.

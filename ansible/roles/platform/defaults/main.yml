@@ -12,6 +12,7 @@ platform_retry: "bash {{ role_path }}/files/retry-downloading.sh"
 platform_releases:
   - name: platform-logs
     chart: logs
+    args: [--set-json, "platformExporter.nodes={{ platform_tf_nodes | to_json }}"]
     logins: { kube-prometheus-stack.alertmanager.config.global.smtp_auth_username: smtp-credentials }
   - { name: platform-backup, chart: backup }
   - name: db-prod

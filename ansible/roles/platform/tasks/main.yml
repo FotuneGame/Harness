@@ -14,9 +14,15 @@
   changed_when: false
   register: platform_tf_raw
 
+- name: Узлы из Terraform
+  ansible.builtin.command: terraform -chdir={{ platform_repo }}/terraform output -json nodes
+  changed_when: false
+  register: platform_tf_nodes_raw
+
 - name: Разбор параметров Terraform
   ansible.builtin.set_fact:
     platform_tf: "{{ platform_tf_raw.stdout | from_json }}"
+    platform_tf_nodes: "{{ platform_tf_nodes_raw.stdout | from_json }}"
 
 - name: Выбор контекста kubectl
   ansible.builtin.command: kubectl config use-context {{ platform_context }}

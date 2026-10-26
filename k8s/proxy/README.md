@@ -21,7 +21,6 @@
 | https://vault.local | Vault |
 | https://argocd.local | Argo CD |
 | https://grafana.local | Grafana |
-| https://prometheus.local | Prometheus |
 | https://jaeger.local | Jaeger |
 | `https://platform.local/<env>/<сервис>` | pgadmin, redis, clickhouse, kibana, kafka, keycloak, llama |
 

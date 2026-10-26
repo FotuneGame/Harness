@@ -100,7 +100,6 @@ kube-prometheus-stack:
 
   prometheus:
     prometheusSpec:
-      externalUrl: https://prometheus.local
       nodeSelector:
         platform.node: core
       retention: 7d
@@ -219,6 +218,22 @@ kube-prometheus-stack:
               annotations:
                 summary: Redis memory usage is high
                 description: Redis in {{ $labels.namespace }} is using more than 85% of its configured memory limit.
+
+# Метрики для дашборда Platform overview, которых нет у стандартных экспортеров:
+# сеть подов (интерфейсы Calico), место в volumes/ по namespace, GPU (nvidia-smi).
+platformExporter:
+  image: python:3.13-slim
+  interval: 30
+  volumesInterval: 300
+  envFolders: [db, mb, llm, acl, app]
+  skipFolders: [minikube, terraform]
+  folderNamespaces: { backups: backup }
+  # Лимиты узлов из Terraform (cpus, memory_gib) передаёт Ansible: Kubernetes
+  # видит у узлов minikube ресурсы всей машины WSL.
+  nodes: {}
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
 
 jaeger:
   fullnameOverride: jaeger

@@ -48,6 +48,7 @@ spec:
             - {{ $llama.contextSize | quote }}
             - -ngl
             - {{ $llama.gpu.enabled | ternary $llama.gpu.layers 0 | quote }}
+            - --metrics
             {{- with $llama.apiPrefix }}
             - --api-prefix
             - {{ . }}
@@ -99,3 +100,16 @@ spec:
     app: llama
   ports:
     - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: llama
+spec:
+  selector:
+    matchLabels:
+      app: llama
+  podMetricsEndpoints:
+    - port: http
+      path: "{{ $llama.apiPrefix }}/metrics"
+      interval: 30s

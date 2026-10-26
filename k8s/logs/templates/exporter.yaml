@@ -1,0 +1,126 @@
+{{- $e := .Values.platformExporter }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-exporter
+data:
+  platform_exporter.py: |
+{{ .Files.Get "files/platform_exporter.py" | indent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-exporter
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: platform-exporter
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-exporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: platform-exporter
+subjects:
+  - kind: ServiceAccount
+    name: platform-exporter
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: platform-exporter, platform-exporter/mode: cluster }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: platform-exporter, platform-exporter/mode: cluster }
+      annotations:
+        checksum/script: {{ .Files.Get "files/platform_exporter.py" | sha256sum }}
+    spec:
+      serviceAccountName: platform-exporter
+      nodeSelector: { platform.node: core }
+      # du читает каталоги баз, закрытые для других пользователей.
+      securityContext: { runAsUser: 0 }
+      containers:
+        - name: exporter
+          image: {{ $e.image }}
+          command: [python3, -u, /app/platform_exporter.py]
+          env:
+            - { name: MODE, value: cluster }
+            - { name: INTERVAL, value: {{ $e.interval | quote }} }
+            - { name: VOLUMES_INTERVAL, value: {{ $e.volumesInterval | quote }} }
+            - { name: ENV_FOLDERS, value: {{ join "," $e.envFolders | quote }} }
+            - { name: SKIP, value: {{ join "," $e.skipFolders | quote }} }
+            - { name: NAMESPACES, value: {{ toJson $e.folderNamespaces | quote }} }
+            - { name: ALERTMANAGER_URL, value: "http://logs-alertmanager.{{ .Release.Namespace }}:9093" }
+            - { name: NODES, value: {{ toJson $e.nodes | quote }} }
+          ports:
+            - { name: metrics, containerPort: 9100 }
+          resources: {{- toYaml $e.resources | nindent 12 }}
+          volumeMounts:
+            - { name: script, mountPath: /app }
+            - { name: volumes, mountPath: /volumes, readOnly: true }
+      volumes:
+        - name: script
+          configMap: { name: platform-exporter }
+        - name: volumes
+          hostPath: { path: /volumes, type: Directory }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: platform-exporter-gpu
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: platform-exporter, platform-exporter/mode: gpu }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: platform-exporter, platform-exporter/mode: gpu }
+      annotations:
+        checksum/script: {{ .Files.Get "files/platform_exporter.py" | sha256sum }}
+    spec:
+      nodeSelector: { platform.gpu: "on" }
+      containers:
+        - name: exporter
+          image: {{ $e.image }}
+          command: [python3, -u, /app/platform_exporter.py]
+          env:
+            - { name: MODE, value: gpu }
+            - { name: INTERVAL, value: "15" }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+            # nvidia-smi без доли GPU: runtime nvidia узла подключает утилиты по переменным.
+            - { name: NVIDIA_VISIBLE_DEVICES, value: all }
+            - { name: NVIDIA_DRIVER_CAPABILITIES, value: utility }
+          ports:
+            - { name: metrics, containerPort: 9100 }
+          resources: {{- toYaml $e.resources | nindent 12 }}
+          volumeMounts:
+            - { name: script, mountPath: /app }
+      volumes:
+        - name: script
+          configMap: { name: platform-exporter }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-exporter
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: platform-exporter }
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      # Метки namespace и pod — данные метрик, а не пода экспортера.
+      honorLabels: true

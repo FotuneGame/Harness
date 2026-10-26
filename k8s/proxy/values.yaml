@@ -22,7 +22,6 @@ routes:
   - { host: platform.local, path: /prod/llama, namespace: llm-prod, service: llama, port: 8080 }
   - { host: vault.local, namespace: secret, service: vault, port: 8200 }
   - { host: grafana.local, namespace: logs, service: logs-grafana, port: 80 }
-  - { host: prometheus.local, namespace: logs, service: logs-prometheus, port: 9090 }
   - { host: jaeger.local, namespace: logs, service: jaeger, port: 16686 }
   - { host: argocd.local, namespace: cicd, service: argocd-server, port: 80 }
   - host: registry.local

@@ -1,5 +1,12 @@
 # Подписи рядов — displayName ${__field.labels.<метка>}: двойные фигурные скобки
 # legendFormat разобрал бы Helm.
+{{- $cpus := 0 }}
+{{- $ram := 0 }}
+{{- range .Values.platformExporter.nodes }}
+{{- $cpus = add $cpus .cpus }}
+{{- $ram = add $ram .memory_gib }}
+{{- end }}
+{{- if not $cpus }}{{ $cpus = "N" }}{{ $ram = "N" }}{{ end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -12,114 +19,1488 @@ data:
       "title": "Platform overview",
       "uid": "platform-overview",
       "schemaVersion": 39,
-      "version": 3,
+      "version": 21,
       "refresh": "30s",
-      "time": { "from": "now-3h", "to": "now" },
+      "time": {
+        "from": "now-3h",
+        "to": "now"
+      },
       "panels": [
-        { "id": 1, "type": "row", "title": "Кластер", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 } },
         {
-          "id": 2, "title": "Активные тревоги", "type": "table",
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 1 },
-          "targets": [{
-            "expr": "sum by (alertname, namespace, severity) (ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"})",
-            "instant": true, "format": "table"
-          }],
-          "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true } } }]
+          "id": 1,
+          "type": "row",
+          "title": "Кластер",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          }
         },
         {
-          "id": 3, "title": "CPU узлов, % от выделенного", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 1 },
-          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "displayName": "${__field.labels.node}" } },
-          "targets": [{
-            "expr": "100 * sum by (node) (rate(node_cpu_usage_seconds_total[5m]) * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)) / sum by (node) (kube_node_status_allocatable{resource=\"cpu\"})"
-          }]
-        },
-        {
-          "id": 4, "title": "Память узлов, % от выделенной", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+          "id": 2,
+          "title": "CPU узлов, % ({{ $cpus }} потоков)",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 1
+          },
           "fieldConfig": {
-            "defaults": { "unit": "percent", "min": 0 },
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.node} (лимит ${__field.labels.limit})",
+              "unit": "percent",
+              "max": 100
+            },
             "overrides": [
-              { "matcher": { "id": "byFrameRefID", "options": "A" },
-                "properties": [{ "id": "displayName", "value": "${__field.labels.node} используется" }] },
-              { "matcher": { "id": "byFrameRefID", "options": "B" },
-                "properties": [{ "id": "displayName", "value": "${__field.labels.node} запрошено подами" }] }
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
             ]
           },
           "targets": [
             {
               "refId": "A",
-              "expr": "100 * sum by (node) (node_memory_working_set_bytes * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)) / sum by (node) (kube_node_status_allocatable{resource=\"memory\"})"
+              "expr": "100 * sum by (node) (rate(node_cpu_usage_seconds_total[5m]) * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)) / scalar(sum(max by (node) (platform_node_cpu_limit))) * on (node) group_left (limit) (max by (node, limit) (platform_node_cpu_limit{limit!=\"\"}) * 0 + 1)"
             },
             {
               "refId": "B",
-              "expr": "100 * sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"}) / sum by (node) (kube_node_status_allocatable{resource=\"memory\"})"
+              "expr": "100 * sum(rate(node_cpu_usage_seconds_total[5m])) / scalar(sum(max by (node) (platform_node_cpu_limit)))"
+            }
+          ],
+          "description": "100% — все {{ $cpus }} потоков узлов (сумма CPU из nodes в terraform/variables.tf)."
+        },
+        {
+          "id": 3,
+          "title": "Память узлов ({{ $ram }} GiB RAM)",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.node} (лимит ${__field.labels.limit}) используется"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.node} (лимит ${__field.labels.limit}) запрошено подами"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "C"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего используется"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "D"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего запрошено подами"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dot"
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (node) (node_memory_working_set_bytes * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)) * on (node) group_left (limit) (max by (node, limit) (platform_node_memory_limit_bytes{limit!=\"\"}) * 0 + 1)"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"}) * on (node) group_left (limit) (max by (node, limit) (platform_node_memory_limit_bytes{limit!=\"\"}) * 0 + 1)"
+            },
+            {
+              "refId": "C",
+              "expr": "sum(sum by (node) (node_memory_working_set_bytes * on (instance) group_left (node) max by (instance, node) (kubelet_node_name)))"
+            },
+            {
+              "refId": "D",
+              "expr": "sum(sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"}))"
+            }
+          ],
+          "description": "Память узлов и запрошенная подами; {{ $ram }} GiB — сумма памяти узлов из nodes в terraform/variables.tf."
+        },
+        {
+          "id": 4,
+          "title": "Неготовые поды по namespace",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "noValue": "0",
+              "displayName": "${__field.labels.namespace}",
+              "decimals": 0
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (max by (namespace, pod) (kube_pod_status_ready{condition=\"false\"}) * on (namespace, pod) (max by (namespace, pod) (kube_pod_status_phase{phase=~\"Running|Pending\"}) == 1))"
             }
           ]
         },
         {
-          "id": 5, "title": "Неготовые поды по namespace", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 8 },
-          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
-          "targets": [{
-            "expr": "sum by (namespace) (kube_pod_status_ready{condition=\"false\"} * on (namespace, pod) group_left () (kube_pod_status_phase{phase=~\"Running|Pending\"} == 1))"
-          }]
+          "id": 5,
+          "title": "Диск volumes/",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "занято"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "свободно"
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(node_filesystem_size_bytes{mountpoint=\"/volumes\"} - node_filesystem_avail_bytes{mountpoint=\"/volumes\"})"
+            },
+            {
+              "refId": "B",
+              "expr": "max(node_filesystem_avail_bytes{mountpoint=\"/volumes\"})"
+            }
+          ]
         },
         {
-          "id": 6, "title": "Перезапуски контейнеров за 15 минут", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 8 },
-          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}/${__field.labels.pod}" } },
-          "targets": [{ "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[15m])) > 0" }]
+          "id": 6,
+          "type": "row",
+          "title": "Нагрузка по namespace",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 15
+          }
         },
         {
-          "id": 7, "title": "CPU по namespace, ядра", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 8 },
-          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "displayName": "${__field.labels.namespace}" } },
-          "targets": [{ "expr": "sum by (namespace) (rate(pod_cpu_usage_seconds_total[5m]))" }]
+          "id": 7,
+          "title": "CPU, % от сервера",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "percent"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * sum by (namespace) (rate(pod_cpu_usage_seconds_total[5m])) / scalar(max(kube_node_status_capacity{resource=\"cpu\"}))"
+            },
+            {
+              "refId": "B",
+              "expr": "100 * sum(rate(pod_cpu_usage_seconds_total[5m])) / scalar(max(kube_node_status_capacity{resource=\"cpu\"}))"
+            }
+          ],
+          "description": "Доля всех потоков CPU сервера (WSL), как CPU usage в Docker Desktop.",
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
         {
-          "id": 8, "title": "Память по namespace", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 24, "x": 0, "y": 15 },
-          "fieldConfig": { "defaults": { "unit": "bytes", "min": 0, "displayName": "${__field.labels.namespace}" } },
-          "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] } },
-          "targets": [{ "expr": "sum by (namespace) (pod_memory_working_set_bytes)" }]
+          "id": 8,
+          "title": "RAM",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (pod_memory_working_set_bytes)"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(pod_memory_working_set_bytes)"
+            }
+          ],
+          "description": "Память подов (working set). Всего меньше, чем в Docker Desktop: туда входят ещё kubelet, Docker и система узлов.",
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
-        { "id": 9, "type": "row", "title": "Базы данных окружений (GitLab — в db-prod)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 } },
         {
-          "id": 10, "title": "Метрики баз доступны (1 — да)", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 23 },
-          "fieldConfig": { "defaults": { "min": 0, "max": 1, "decimals": 0, "displayName": "${__field.labels.namespace}/${__field.labels.service}" } },
-          "targets": [{ "expr": "up{service=~\"postgresql-metrics|redis-metrics|clickhouse\"}" }]
+          "id": 9,
+          "title": "SSD/HDD: занято в volumes/",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 16
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (platform_volume_used_bytes)"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(platform_volume_used_bytes)"
+            }
+          ],
+          "description": "Размер каталогов volumes/ namespace, обновляется раз в 5 минут.",
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
         {
-          "id": 11, "title": "PostgreSQL: подключения", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 23 },
-          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
-          "targets": [{ "expr": "sum by (namespace) (pg_stat_activity_count)" }]
+          "id": 10,
+          "title": "SSD/HDD: запись",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 23
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "Bps"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (rate(container_fs_writes_bytes_total[5m]))"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(container_fs_writes_bytes_total[5m]))"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
         {
-          "id": 12, "title": "PostgreSQL: транзакций в секунду", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 23 },
-          "fieldConfig": { "defaults": { "unit": "ops", "min": 0, "displayName": "${__field.labels.namespace}/${__field.labels.datname}" } },
-          "targets": [{ "expr": "sum by (namespace, datname) (rate(pg_stat_database_xact_commit{datname!~\"template.*|postgres\"}[5m]))" }]
+          "id": 11,
+          "title": "SSD/HDD: чтение",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 23
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "Bps"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (rate(container_fs_reads_bytes_total[5m]))"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(container_fs_reads_bytes_total[5m]))"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
         {
-          "id": 13, "title": "Redis: память", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 0, "y": 30 },
-          "fieldConfig": { "defaults": { "unit": "bytes", "min": 0, "displayName": "${__field.labels.namespace}" } },
-          "targets": [{ "expr": "redis_memory_used_bytes" }]
+          "id": 12,
+          "title": "Сеть: получено подами",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 30
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "Bps"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (rate(node_network_transmit_bytes_total{device=~\"cali.+\"}[5m]) * on (device) group_left (namespace) max by (device, namespace) (platform_pod_interface))"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(node_network_transmit_bytes_total{device=~\"cali.+\"}[5m]))"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
         {
-          "id": 14, "title": "Redis: клиенты", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 8, "y": 30 },
-          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
-          "targets": [{ "expr": "redis_connected_clients" }]
+          "id": 13,
+          "title": "Сеть: отправлено подами",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 30
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "Bps"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Всего"
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "text"
+                    }
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  },
+                  {
+                    "id": "custom.lineWidth",
+                    "value": 2
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (rate(node_network_receive_bytes_total{device=~\"cali.+\"}[5m]) * on (device) group_left (namespace) max by (device, namespace) (platform_pod_interface))"
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(node_network_receive_bytes_total{device=~\"cali.+\"}[5m]))"
+            }
+          ],
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull"
+              ]
+            }
+          }
         },
         {
-          "id": 15, "title": "ClickHouse: выполняемые запросы", "type": "timeseries",
-          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 30 },
-          "fieldConfig": { "defaults": { "min": 0, "decimals": 0, "displayName": "${__field.labels.namespace}" } },
-          "targets": [{ "expr": "ClickHouseMetrics_Query" }]
+          "id": 14,
+          "type": "row",
+          "title": "GPU узла llms и llama.cpp",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 37
+          }
+        },
+        {
+          "id": 15,
+          "title": "GPU: загрузка",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 38
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.node} GPU ${__field.labels.gpu}",
+              "unit": "percent"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "platform_gpu_utilization_percent"
+            }
+          ],
+          "description": "Загрузку GPU по процессам драйвер в WSL2 не отдаёт: GPU узла делят поды llama.cpp ниже."
+        },
+        {
+          "id": 16,
+          "title": "VRAM",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 38
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "unit": "bytes"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.node} занято"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.node} всего"
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        10,
+                        10
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "platform_gpu_memory_used_bytes"
+            },
+            {
+              "refId": "B",
+              "expr": "platform_gpu_memory_total_bytes"
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "title": "llama.cpp: скорость генерации, токенов/с",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 45
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.pod}",
+              "unit": "short",
+              "decimals": 1
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (rate(llamacpp:tokens_predicted_total{namespace=~\"llm-.*\"}[5m])) / sum by (namespace, pod) (rate(llamacpp:tokens_predicted_seconds_total{namespace=~\"llm-.*\"}[5m]))"
+            }
+          ],
+          "description": "Токенов в секунду во время генерации ответа (как t/s в веб-интерфейсе llama.cpp), среднее за 5 минут. Пусто — запросов не было."
+        },
+        {
+          "id": 18,
+          "title": "llama.cpp: скорость чтения запроса, токенов/с",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 45
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.pod}",
+              "unit": "short",
+              "decimals": 1
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (rate(llamacpp:prompt_tokens_total{namespace=~\"llm-.*\"}[5m])) / sum by (namespace, pod) (rate(llamacpp:prompt_seconds_total{namespace=~\"llm-.*\"}[5m]))"
+            }
+          ],
+          "description": "Токенов в секунду при обработке входного текста (prompt), среднее за 5 минут."
+        },
+        {
+          "id": 19,
+          "title": "llama.cpp: запросы",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 45
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.namespace}/${__field.labels.pod} в работе"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.namespace}/${__field.labels.pod} в очереди"
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (llamacpp:requests_processing{namespace=~\"llm-.*\"})"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (namespace, pod) (llamacpp:requests_deferred{namespace=~\"llm-.*\"})"
+            }
+          ]
+        },
+        {
+          "id": 20,
+          "title": "llama.cpp: токенов за 5 минут",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 52
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.namespace}/${__field.labels.pod} сгенерировано"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "${__field.labels.namespace}/${__field.labels.pod} прочитано"
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (increase(llamacpp:tokens_predicted_total{namespace=~\"llm-.*\"}[5m]))"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (namespace, pod) (increase(llamacpp:prompt_tokens_total{namespace=~\"llm-.*\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "id": 21,
+          "title": "llama.cpp: CPU, ядра",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 52
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.pod}",
+              "unit": "short"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (rate(pod_cpu_usage_seconds_total{namespace=~\"llm-.*\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "id": 22,
+          "title": "llama.cpp: RAM",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 52
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.pod}",
+              "unit": "bytes"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (pod_memory_working_set_bytes{namespace=~\"llm-.*\"})"
+            }
+          ]
+        },
+        {
+          "id": 23,
+          "type": "row",
+          "title": "Базы данных окружений (GitLab — база gitlabhq_production и Redis db1 в db-prod)",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 59
+          }
+        },
+        {
+          "id": 24,
+          "title": "Базы: нагрузка CPU, ядра",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 60
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.pod}",
+              "unit": "short"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) (rate(pod_cpu_usage_seconds_total{namespace=~\"db-.*\", pod=~\"postgresql-.*|redis-master-.*|clickhouse-.*|elasticsearch-.*\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "id": 25,
+          "title": "Базы: сетевой трафик",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 60
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.pod}",
+              "unit": "Bps"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, pod) ((rate(node_network_receive_bytes_total{device=~\"cali.+\"}[5m]) + rate(node_network_transmit_bytes_total{device=~\"cali.+\"}[5m])) * on (device) group_left (namespace, pod) max by (device, namespace, pod) (platform_pod_interface{namespace=~\"db-.*\", pod=~\"postgresql-.*|redis-master-.*|clickhouse-.*|elasticsearch-.*\"}))"
+            }
+          ],
+          "description": "Получено и отправлено подом базы."
+        },
+        {
+          "id": 26,
+          "title": "Базы: размер данных на диске",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 60
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.path}",
+              "unit": "bytes"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max by (path) (platform_volume_used_bytes{path=~\"db/.*\"})"
+            }
+          ],
+          "description": "Каталоги volumes/db/<env>/, обновляется раз в 5 минут."
+        },
+        {
+          "id": 27,
+          "title": "PostgreSQL: подключения",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 67
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.datname}",
+              "decimals": 0
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, datname) (pg_stat_activity_count{datname!~\"|template.*|postgres\"})"
+            }
+          ]
+        },
+        {
+          "id": 28,
+          "title": "PostgreSQL: транзакций в секунду",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 67
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.datname}",
+              "unit": "ops"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, datname) (rate(pg_stat_database_xact_commit{datname!~\"|template.*|postgres\"}[5m]) + rate(pg_stat_database_xact_rollback{datname!~\"|template.*|postgres\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "id": 29,
+          "title": "PostgreSQL: размер баз",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 67
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.datname}",
+              "unit": "bytes"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max by (namespace, datname) (pg_database_size_bytes{datname!~\"|template.*|postgres\"})"
+            }
+          ]
+        },
+        {
+          "id": 30,
+          "title": "Redis: подключения",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 74
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "decimals": 0
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (redis_connected_clients)"
+            }
+          ]
+        },
+        {
+          "id": 31,
+          "title": "Redis: команд в секунду",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 74
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "ops"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (rate(redis_commands_processed_total[5m]))"
+            }
+          ]
+        },
+        {
+          "id": 32,
+          "title": "Redis: память",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 74
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "bytes"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (redis_memory_used_bytes)"
+            }
+          ]
+        },
+        {
+          "id": 33,
+          "title": "Redis: ключи по базам",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 18,
+            "y": 74
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}/${__field.labels.db}",
+              "decimals": 0
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace, db) (redis_db_keys) > 0"
+            }
+          ]
+        },
+        {
+          "id": 34,
+          "title": "ClickHouse: подключения",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 0,
+            "y": 81
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "decimals": 0
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (ClickHouseMetrics_TCPConnection + ClickHouseMetrics_HTTPConnection)"
+            }
+          ]
+        },
+        {
+          "id": 35,
+          "title": "ClickHouse: запросов в секунду",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 8,
+            "y": 81
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "ops"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (rate(ClickHouseProfileEvents_Query[5m]))"
+            }
+          ]
+        },
+        {
+          "id": 36,
+          "title": "ClickHouse: размер таблиц",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 7,
+            "w": 8,
+            "x": 16,
+            "y": 81
+          },
+          "fieldConfig": {
+            "defaults": {
+              "min": 0,
+              "displayName": "${__field.labels.namespace}",
+              "unit": "bytes"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (ClickHouseAsyncMetrics_TotalBytesOfMergeTreeTables)"
+            }
+          ]
+        },
+        {
+          "id": 37,
+          "type": "row",
+          "title": "Тревоги",
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 88
+          }
+        },
+        {
+          "id": 38,
+          "title": "История тревог за период",
+          "type": "state-timeline",
+          "gridPos": {
+            "h": 12,
+            "w": 24,
+            "x": 0,
+            "y": 89
+          },
+          "description": "Когда тревоги были активны в Alertmanager в выбранном периоде: из правил Prometheus и отправленные вручную (amtool alert add).",
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "clamp_max(max by (alertname, alert_namespace) (platform_alertmanager_alert{alertname!=\"Watchdog\"}), 1)"
+            }
+          ],
+          "options": {
+            "showValue": "never",
+            "mergeValues": true,
+            "rowHeight": 0.8,
+            "legend": {
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "none"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "Тревог не было",
+              "displayName": "${__field.labels.alertname} ${__field.labels.alert_namespace}",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "red"
+              }
+            }
+          }
         }
       ]
     }

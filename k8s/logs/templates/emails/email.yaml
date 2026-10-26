@@ -22,7 +22,7 @@ data:
   <tr><td><b>Началась</b></td><td>{{ .StartsAt.Format "02.01.2006 15:04:05" }} UTC</td></tr>
   {{ if eq .Status "resolved" }}<tr><td><b>Закончилась</b></td><td>{{ .EndsAt.Format "02.01.2006 15:04:05" }} UTC</td></tr>{{ end }}
   <tr><td><b>Ссылки</b></td><td>
-    {{ with .GeneratorURL }}<a href="{{ . }}">график в Prometheus</a>{{ end }}
+    <a href="https://grafana.local/d/platform-overview">Platform overview</a>
     {{ with .Annotations.runbook_url }} · <a href="{{ . }}">что делать</a>{{ end }}
   </td></tr>
 </table>

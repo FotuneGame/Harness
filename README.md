@@ -37,7 +37,7 @@ Minikube из трёх узлов. Terraform создаёт узлы, Ansible у
 | `vcs` | core | GitLab, Container Registry, MinIO (объекты GitLab) | `gitlab-webservice-default.vcs:8181`, `registry.vcs:5000`, `minio.vcs:9000` | https://gitlab.local, https://registry.local |
 | `cicd` | core | Argo CD, GitLab Runner, Kyverno | `argocd-server.cicd` | https://argocd.local |
 | `secret` | core | Vault, Vault Secrets Operator | `vault.secret:8200` | https://vault.local |
-| `logs` | core | Prometheus, Alertmanager, Grafana, Jaeger | `logs-prometheus.logs:9090`, `jaeger.logs:4317/4318` (OTLP) | https://prometheus.local, https://grafana.local, https://jaeger.local |
+| `logs` | core | Prometheus, Alertmanager, Grafana, Jaeger | `logs-prometheus.logs:9090`, `jaeger.logs:4317/4318` (OTLP) | https://grafana.local, https://jaeger.local |
 | `backup` | core | K8up, MinIO (резервные копии) | `minio.backup:9000` | — |
 | `db-<env>` | core | PostgreSQL, Redis, ClickHouse, Elasticsearch (в `db-prod` — ещё база `gitlabhq_production` и Redis-база 1 для GitLab) | `postgresql.db-<env>:5432`, `redis-master.db-<env>:6379`, `clickhouse.db-<env>:8123`, `elasticsearch.db-<env>:9200` | `/<env>/pgadmin`, `/<env>/redis`, `/<env>/clickhouse/play`, `/<env>/kibana` |
 | `mb-<env>` | core | Kafka | `kafka.mb-<env>:9092` | `/<env>/kafka` |
@@ -149,8 +149,9 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
   kubectl get secret -n app-dev gitlab-registry
   ```
 
-- Проверка уведомлений Alertmanager — тестовая тревога, письмо приходит примерно
-  через 30 секунд:
+- Проверка тревог — тестовая тревога: письмо приходит примерно через 30 секунд,
+  тревога видна в Grafana (Platform overview: «Тревоги сейчас» и «История тревог»)
+  и закрывается сама через 5 минут:
 
   ```bash
   kubectl exec -n logs alertmanager-logs-alertmanager-0 -c alertmanager -- amtool alert add TestAlert severity=warning --annotation=summary="Проверка" --alertmanager.url=http://localhost:9093
@@ -175,16 +176,15 @@ sudo cp volumes/proxy/tls/ca.crt /usr/local/share/ca-certificates/platform.crt &
     docker-in-docker не работает, задачи запускаются без привилегий.
 - HTTPS: без доверия к `volumes/proxy/tls/ca.crt` (команды выше) браузер
   показывает предупреждение о сертификате. CA действует только для имён `*.local`.
-- `ports open 0.0.0.0` открывает сервисы в сеть; Prometheus,
+- `ports open 0.0.0.0` открывает сервисы в сеть;
   Jaeger, Kafka UI, Kibana, RedisInsight и llama.cpp работают без авторизации.
 - Данные хранятся в `volumes/` (в Git только `.gitkeep`), там же state
   Terraform (`volumes/terraform`). Удаляйте каталог только целиком: пароли в
   Vault (`volumes/secret`) и данные БД связаны. Ключи шифрования базы GitLab —
   `volumes/vcs/rails/gitlab-rails-secret.json`: без них GitLab отвечает ошибкой 500.
 - Графики состояния: https://grafana.local (вход — Vault `logs/grafana`) →
-  Dashboards → **Platform overview**: активные тревоги, CPU и память узлов и
-  namespace, неготовые поды и перезапуски, PostgreSQL, Redis и ClickHouse всех
-  окружений. Стандартные дашборды kube-prometheus-stack (Kubernetes / …, Node
+  Dashboards → **Platform overview**: активные тревоги, узлы, CPU, RAM, диск,
+  сеть и GPU по namespace, подключения, запросы и размер баз всех окружений. Стандартные дашборды kube-prometheus-stack (Kubernetes / …, Node
   Exporter) показывают объекты кластера, но графики CPU и памяти контейнеров в
   них пусты: в minikube с Docker cAdvisor не видит контейнеры. Потребление
   ресурсов — в Platform overview (по узлам, подам и namespace).
